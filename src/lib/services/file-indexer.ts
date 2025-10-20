@@ -1,6 +1,7 @@
 import { ProjectFile } from '@/lib/types';
 import { vectorService } from './vector';
 import { toast } from 'sonner';
+import { getFileExtension, getMimeType, getLanguageFromExtension, isTextFileByMime, normalizeFilePath } from '@/lib/utils/file-utils';
 
 export interface ProjectIndex {
   id: string;
@@ -11,7 +12,7 @@ export interface ProjectIndex {
   createdAt: Date;
   updatedAt: Date;
   stats: ProjectStats;
-  configuration?: ProjectConfiguration;
+  configuration: ProjectConfiguration;
 }
 
 export interface FileTreeNode {
@@ -46,7 +47,7 @@ export interface ProjectConfiguration {
   indexTextFiles: boolean;
   maxFileSize: number;
   supportedLanguages: string[];
-  customRules: Record<string, any>;
+  customRules: Record<string, unknown>;
 }
 
 export class FileIndexerService {
@@ -96,17 +97,23 @@ export class FileIndexerService {
   ): Promise<ProjectIndex> {
     const startTime = Date.now();
     const projectId = `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     try {
-      // Extract root path
+      // Инициализируем options с гарантированными значениями ДО использования
       const rootPath = this.extractRootPath(files);
-      const projectName = options.name || rootPath || 'Новый проект';
-      
-      // Filter files
-      const filteredFiles = this.filterFiles(files, options.ignorePatterns);
-      
-      // Process files
-      const projectFiles = await this.processFiles(filteredFiles, projectId, options.maxFileSize);
+      const normalizedOptions = {
+        name: options.name || rootPath || 'Новый проект',
+        ignorePatterns: options.ignorePatterns || this.defaultIgnorePatterns,
+        maxFileSize: options.maxFileSize || 10 * 1024 * 1024, // 10MB
+      };
+
+      const projectName = normalizedOptions.name;
+
+      // Filter files - используем normalizedOptions
+      const filteredFiles = this.filterFiles(files, normalizedOptions.ignorePatterns);
+
+      // Process files - используем normalizedOptions
+      const projectFiles = await this.processFiles(filteredFiles, projectId, normalizedOptions.maxFileSize);
       
       // Build file tree structure
       const structure = this.buildFileTree(projectFiles);
@@ -165,7 +172,7 @@ export class FileIndexerService {
       
       return projectIndex;
     } catch (error) {
-      console.error('Error indexing project:', error);
+      console.error('Error indexing project:', JSON.stringify(error, null, 2));
       toast.error('Ошибка при индексации проекта');
       throw error;
     }
@@ -173,8 +180,8 @@ export class FileIndexerService {
 
   async reindexProject(projectIndex: ProjectIndex, newFiles: FileList): Promise<ProjectIndex> {
     // Similar to indexProject but updates existing index
-    const filteredFiles = this.filterFiles(newFiles, projectIndex.configuration?.ignorePatterns);
-    const projectFiles = await this.processFiles(filteredFiles, projectIndex.id, projectIndex.configuration?.maxFileSize);
+    const filteredFiles = this.filterFiles(newFiles, projectIndex.configuration.ignorePatterns);
+    const projectFiles = await this.processFiles(filteredFiles, projectIndex.id, projectIndex.configuration.maxFileSize);
     
     const updatedIndex: ProjectIndex = {
       ...projectIndex,
@@ -191,24 +198,24 @@ export class FileIndexerService {
 
   private extractRootPath(files: FileList): string {
     if (files.length === 0) return '';
-    
+
     const firstFile = files[0];
-    const path = firstFile.webkitRelativePath || firstFile.name;
+    const path = normalizeFilePath(firstFile);
     const parts = path.split('/');
-    
+
     return parts.length > 1 ? parts[0] : '';
   }
 
-  private filterFiles(files: FileList, ignorePatterns?: string[]): File[] {
-    const patterns = ignorePatterns || this.defaultIgnorePatterns;
+  private filterFiles(files: FileList, ignorePatterns: string[]): File[] {
+    // ignorePatterns гарантирован - передаём всегда из normalizedOptions
     const filteredFiles: File[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const path = file.webkitRelativePath || file.name;
+      const path = normalizeFilePath(file);
       
       // Check if file should be ignored
-      const shouldIgnore = patterns.some(pattern => {
+      const shouldIgnore = ignorePatterns.some(pattern => {
         // Convert glob pattern to regex
         const regex = new RegExp(
           pattern
@@ -242,9 +249,10 @@ export class FileIndexerService {
           continue;
         }
 
-        const extension = this.getFileExtension(file.name);
-        const isTextFile = this.isTextFile(file, extension);
-        
+        const extension = getFileExtension(file.name);
+        const mimeType = getMimeType(extension);
+        const isTextFile = isTextFileByMime(mimeType) || isTextFileByMime(file.type);
+
         let content = '';
         if (isTextFile && file.size < 1024 * 1024) { // 1MB limit for content reading
           content = await this.readFileAsText(file);
@@ -253,14 +261,14 @@ export class FileIndexerService {
         const projectFile: ProjectFile = {
           id: `${projectId}_file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: file.name,
-          path: file.webkitRelativePath || file.name,
-          type: file.type || this.getMimeType(extension),
+          path: normalizeFilePath(file),
+          type: mimeType,
           size: file.size,
           content,
           lastModified: new Date(file.lastModified),
           metadata: {
             extension,
-            language: this.getLanguageFromExtension(extension),
+            language: getLanguageFromExtension(extension),
             isTextFile,
             isBinary: !isTextFile,
             projectId,
@@ -269,7 +277,7 @@ export class FileIndexerService {
 
         projectFiles.push(projectFile);
       } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
+        console.error(`Error processing file ${file.name}:`, JSON.stringify(error, null, 2));
       }
     }
 
@@ -295,27 +303,31 @@ export class FileIndexerService {
   private addToFileTree(parent: FileTreeNode, pathParts: string[], file: ProjectFile): void {
     if (pathParts.length === 0) return;
 
+    // Гарантируем что children инициализирован ДО использования
+    if (!parent.children) {
+      parent.children = [];
+    }
+
     if (pathParts.length === 1) {
       // This is a file
-      parent.children = parent.children || [];
       parent.children.push({
         name: pathParts[0],
         type: 'file',
         path: file.path,
         size: file.size,
         metadata: {
-          language: file.metadata?.language,
-          extension: file.metadata?.extension,
+          language: file.metadata.language,
+          extension: file.metadata.extension,
           lastModified: file.lastModified,
-          isTextFile: file.metadata?.isTextFile,
-          isBinary: file.metadata?.isBinary,
+          isTextFile: file.metadata.isTextFile,
+          isBinary: file.metadata.isBinary,
         },
       });
     } else {
       // This is a directory
       const dirName = pathParts[0];
-      parent.children = parent.children || [];
-      
+      // parent.children гарантирован как инициализированный выше
+
       let dir = parent.children.find(child => child.name === dirName && child.type === 'directory');
       if (!dir) {
         dir = {
@@ -342,14 +354,20 @@ export class FileIndexerService {
 
     files.forEach(file => {
       totalSize += file.size;
-      
+
       // Track languages
-      const language = file.metadata?.language || 'Unknown';
-      languages[language] = (languages[language] || 0) + 1;
-      
+      const language = file.metadata.language;
+      if (!languages[language]) {
+        languages[language] = 0;
+      }
+      languages[language]++;
+
       // Track file types
-      const extension = file.metadata?.extension || 'no-ext';
-      fileTypes[extension] = (fileTypes[extension] || 0) + 1;
+      const extension = file.metadata.extension;
+      if (!fileTypes[extension]) {
+        fileTypes[extension] = 0;
+      }
+      fileTypes[extension]++;
       
       // Find largest file
       if (file.size > largestFile.size) {
@@ -385,7 +403,7 @@ export class FileIndexerService {
 
   private async indexTextFilesInVector(files: ProjectFile[], projectIndex: ProjectIndex): Promise<void> {
     const textFiles = files.filter(file =>
-      file.metadata?.isTextFile &&
+      file.metadata.isTextFile &&
       file.content &&
       file.content.length > 0
     );
@@ -393,7 +411,8 @@ export class FileIndexerService {
     for (const file of textFiles) {
       try {
         // Use token-aware chunking instead of character-based chunking
-        const chunks = this.chunkTextByTokens(file.content || '', 2000); // Chunk by ~2000 tokens (safe for 8192 limit)
+        // file.content гарантирован потому что мы отфильтровали только файлы с контентом выше
+        const chunks = this.chunkTextByTokens(file.content!, 1500); // Chunk by ~1500 tokens (safe buffer for 8192 limit)
 
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
@@ -412,15 +431,15 @@ export class FileIndexerService {
               chunkNumber: i,
               totalChunks: chunks.length,
               fileSize: file.size,
-              language: file.metadata?.language,
-              extension: file.metadata?.extension,
+              language: file.metadata.language,
+              extension: file.metadata.extension,
               lastModified: file.lastModified.toISOString(),
               indexedAt: new Date().toISOString(),
             },
           });
         }
       } catch (error) {
-        console.error(`Error indexing file ${file.name}:`, error);
+        console.error(`Error indexing file ${file.name}:`, JSON.stringify(error, null, 2));
         // Continue processing other files even if one fails
       }
     }
@@ -485,111 +504,6 @@ export class FileIndexerService {
     return chunks.filter(chunk => chunk.trim().length > 0);
   }
 
-  private getFileExtension(fileName: string): string {
-    const parts = fileName.split('.');
-    return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
-  }
-
-  private isTextFile(file: File, extension: string): boolean {
-    // Check if it's a known text extension
-    if (this.supportedExtensions.has(extension)) {
-      return true;
-    }
-
-    // Check MIME type
-    if (file.type.startsWith('text/')) {
-      return true;
-    }
-
-    // Special cases
-    const textPatterns = [
-      /^text\//,
-      /application\/json/,
-      /application\/xml/,
-      /application\/javascript/,
-      /application\/typescript/,
-    ];
-
-    return textPatterns.some(pattern => pattern.test(file.type));
-  }
-
-  private getMimeType(extension: string): string {
-    const mimeTypes: Record<string, string> = {
-      'js': 'application/javascript',
-      'ts': 'application/typescript',
-      'jsx': 'application/javascript',
-      'tsx': 'application/typescript',
-      'json': 'application/json',
-      'html': 'text/html',
-      'css': 'text/css',
-      'md': 'text/markdown',
-      'txt': 'text/plain',
-      'py': 'text/x-python',
-      'java': 'text/x-java',
-      'cpp': 'text/x-c++src',
-      'c': 'text/x-csrc',
-      'h': 'text/x-chdr',
-      'xml': 'application/xml',
-      'yaml': 'application/x-yaml',
-      'yml': 'application/x-yaml',
-    };
-
-    return mimeTypes[extension] || 'application/octet-stream';
-  }
-
-  private getLanguageFromExtension(extension: string): string {
-    const langMap: Record<string, string> = {
-      'js': 'JavaScript',
-      'jsx': 'JavaScript',
-      'ts': 'TypeScript',
-      'tsx': 'TypeScript',
-      'py': 'Python',
-      'java': 'Java',
-      'kt': 'Kotlin',
-      'scala': 'Scala',
-      'clj': 'Clojure',
-      'c': 'C',
-      'cpp': 'C++',
-      'cc': 'C++',
-      'cxx': 'C++',
-      'h': 'C Header',
-      'hpp': 'C++ Header',
-      'cs': 'C#',
-      'vb': 'Visual Basic',
-      'fs': 'F#',
-      'go': 'Go',
-      'rs': 'Rust',
-      'swift': 'Swift',
-      'dart': 'Dart',
-      'php': 'PHP',
-      'rb': 'Ruby',
-      'lua': 'Lua',
-      'perl': 'Perl',
-      'r': 'R',
-      'matlab': 'MATLAB',
-      'html': 'HTML',
-      'xml': 'XML',
-      'css': 'CSS',
-      'scss': 'SCSS',
-      'sass': 'Sass',
-      'less': 'Less',
-      'json': 'JSON',
-      'yaml': 'YAML',
-      'yml': 'YAML',
-      'toml': 'TOML',
-      'ini': 'INI',
-      'cfg': 'Config',
-      'md': 'Markdown',
-      'rst': 'reStructuredText',
-      'txt': 'Text',
-      'sql': 'SQL',
-      'graphql': 'GraphQL',
-      'proto': 'Protocol Buffers',
-      'dockerfile': 'Dockerfile',
-    };
-
-    return langMap[extension] || 'Unknown';
-  }
 
   private readFileAsText(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -600,43 +514,71 @@ export class FileIndexerService {
     });
   }
 
+  /**
+   * Поиск в проекте
+   * @returns Массив найденных файлов, пустой массив если нет совпадений
+   * @throws Error при ошибках I/O, проблемах с индексом/правами
+   */
   async searchInProject(projectId: string, query: string, options?: {
     fileTypes?: string[];
     languages?: string[];
     maxResults?: number;
-  }): Promise<ProjectFile[]> {
-    try {
-      const searchOptions = {
-        limit: options?.maxResults || 20,
-        filter: {
-          projectId,
-          type: 'project_file',
-          ...(options?.languages && { language: { $in: options.languages } }),
-          ...(options?.fileTypes && { extension: { $in: options.fileTypes } }),
-        },
-      };
+  }): Promise<Array<{
+    path: string;
+    line?: number;
+    column?: number;
+    snippet: string;
+    score?: number;
+  }>> {
+    if (!projectId || !query) {
+      throw new Error('projectId и query обязательны');
+    }
 
-      const results = await vectorService.search(query, searchOptions);
-      
-      return results.map(doc => ({
-        id: doc.metadata.fileName,
-        name: doc.metadata.fileName,
-        path: doc.metadata.filePath,
-        type: doc.metadata.fileType || 'text/plain',
-        size: doc.metadata.fileSize || 0,
-        content: doc.content,
-        lastModified: new Date(doc.metadata.lastModified),
-        metadata: {
-          language: doc.metadata.language,
-          extension: doc.metadata.extension,
-          projectId: doc.metadata.projectId,
-          similarity: doc.similarity,
-        },
-      }));
+    const maxResults = options ? options.maxResults : 20;
+    const languages = options ? options.languages : undefined;
+    const fileTypes = options ? options.fileTypes : undefined;
+
+    const searchOptions = {
+      limit: maxResults,
+      filter: {
+        projectId,
+        type: 'project_file_chunk',
+        ...(languages && { language: { $in: languages } }),
+        ...(fileTypes && { extension: { $in: fileTypes } }),
+      },
+    };
+
+    let results;
+    try {
+      results = await vectorService.search(query, searchOptions);
     } catch (error) {
-      console.error('Error searching in project:', error);
+      const message = `Ошибка поиска в индексе: ${error instanceof Error ? error.message : String(error)}`;
+      console.error(message, error);
+      throw new Error(message);
+    }
+
+    // Если нет совпадений - возвращаем пустой массив
+    if (!results || results.length === 0) {
       return [];
     }
+
+    // Структурированный результат: { path, line, column, snippet, score }
+    return results.map(doc => {
+      if (!doc.metadata || !doc.metadata.filePath) {
+        throw new Error(`Document ${doc.id} missing filePath in metadata`);
+      }
+
+      return {
+        path: String(doc.metadata.filePath),
+        snippet: doc.content.substring(0, 200),
+        score: doc.similarity,
+      };
+    }).sort((a, b) => {
+      // score может быть undefined в результатах поиска - используем 0 если нет
+      const scoreB = b.score ?? 0;
+      const scoreA = a.score ?? 0;
+      return scoreB - scoreA;
+    });
   }
 }
 

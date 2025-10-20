@@ -1,17 +1,5 @@
-import fs from "fs";
-
 /** @type {import('tailwindcss').Config} */
 
-let theme = {};
-try {
-  const themePath = "./theme.json";
-
-  if (fs.existsSync(themePath)) {
-    theme = JSON.parse(fs.readFileSync(themePath, "utf-8"));
-  }
-} catch (err) {
-  console.error('failed to parse custom styles', err)
-}
 const defaultTheme = {
   container: {
     center: true,
@@ -24,6 +12,21 @@ const defaultTheme = {
       pwa: { raw: "(display-mode: standalone)" },
     },
     colors: {
+      // Оранжевая палитра для акцентов
+      orange: {
+        50: '#fff5ed',
+        100: '#ffe8d1',
+        200: '#ffd4a3',
+        300: '#ffb970',
+        400: '#ff9533',
+        500: '#ff6600',
+        600: '#e55a00',
+        700: '#cc4d00',
+        800: '#a33d00',
+        900: '#7a2e00',
+        950: '#401700',
+      },
+      // Темные нейтральные цвета
       neutral: {
         1: "var(--color-neutral-1)",
         2: "var(--color-neutral-2)",
@@ -138,10 +141,11 @@ const defaultTheme = {
     80: "var(--size-80)",
     96: "var(--size-96)",
   },
-  darkMode: ["selector", '[data-appearance="dark"]'],
+  darkMode: ["class", '[data-appearance="dark"]'],
 }
 
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
-  theme: { ...defaultTheme, ...theme },
+  theme: defaultTheme,
+  darkMode: 'class', // Темная тема по умолчанию
 };

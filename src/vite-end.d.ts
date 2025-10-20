@@ -5,6 +5,25 @@ declare global {
     SpeechRecognition: typeof SpeechRecognition;
     webkitSpeechRecognition: typeof SpeechRecognition;
   }
+
+  interface ImportMetaEnv {
+    readonly VITE_API_BASE_URL: string;
+    readonly VITE_WS_BASE_URL: string;
+    readonly VITE_APP_NAME: string;
+    readonly VITE_APP_VERSION: string;
+    readonly VITE_OPENROUTER_API_KEY: string;
+    readonly VITE_ELEVENLABS_API_KEY: string;
+    readonly VITE_ELEVENLABS_VOICE_ID: string;
+    readonly VITE_OPENAI_API_KEY: string;
+    readonly VITE_ANTHROPIC_API_KEY: string;
+    readonly VITE_GITHUB_TOKEN: string;
+    readonly VITE_GITHUB_REPO: string;
+    readonly VITE_GITHUB_OWNER: string;
+  }
+
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
 }
 
 interface SpeechRecognition extends EventTarget {

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useKV } from '@/shims/spark-hooks';
 import { Message } from '@/lib/types';
+import { measureOperation } from '@/lib/services/performance-monitor';
 
 interface ContextTracker {
   totalTokens: number;
@@ -78,22 +79,35 @@ export function useContextTracker() {
     selectedFiles: string[] = [],
     fileContents: Record<string, string> = {}
   ) => {
-    const messagesTokens = calculateMessagesTokens(messages);
-    const systemTokens = calculateSystemTokens(workRulesText, todoContext, modelInstructions);
-    const fileContextTokens = calculateFileContextTokens(selectedFiles, fileContents);
+    return measureOperation('context:update-usage', () => {
+      const messagesTokens = calculateMessagesTokens(messages);
+      const systemTokens = calculateSystemTokens(workRulesText, todoContext, modelInstructions);
+      const fileContextTokens = calculateFileContextTokens(selectedFiles, fileContents);
 
-    const totalTokens = messagesTokens + systemTokens + fileContextTokens;
+      const totalTokens = messagesTokens + systemTokens + fileContextTokens;
 
-    const newContextData: ContextTracker = {
-      totalTokens,
-      messagesTokens,
-      systemTokens,
-      fileContextTokens,
-      lastCalculated: new Date()
-    };
+      const newContextData: ContextTracker = {
+        totalTokens,
+        messagesTokens,
+        systemTokens,
+        fileContextTokens,
+        lastCalculated: new Date()
+      };
 
-    setContextData(newContextData);
-    return newContextData;
+      setContextData(newContextData);
+      return newContextData;
+    }, {
+      data: {
+        messageCount: messages.length,
+        selectedFileCount: selectedFiles.length
+      },
+      onSuccessData: (context) => ({
+        totalTokens: context.totalTokens,
+        messagesTokens: context.messagesTokens,
+        systemTokens: context.systemTokens,
+        fileContextTokens: context.fileContextTokens
+      })
+    });
   }, [
     calculateMessagesTokens,
     calculateSystemTokens,
@@ -103,21 +117,11 @@ export function useContextTracker() {
 
   // Получение текущего использования контекста
   const getCurrentUsage = useCallback((): number => {
-    return contextData?.totalTokens || 0;
+    return contextData.totalTokens;
   }, [contextData]);
 
   // Получение детальной информации о распределении токенов
   const getContextBreakdown = useCallback(() => {
-    if (!contextData) {
-      return {
-        total: 0,
-        messages: 0,
-        system: 0,
-        files: 0,
-        lastCalculated: new Date()
-      };
-    }
-
     return {
       total: contextData.totalTokens,
       messages: contextData.messagesTokens,
@@ -152,7 +156,7 @@ export function useContextTracker() {
     });
   }, [setContextData]);
 
-  return {
+  return useMemo(() => ({
     // Данные
     contextData,
     getCurrentUsage,
@@ -165,5 +169,14 @@ export function useContextTracker() {
 
     // Утилиты
     resetContext
-  };
+  }), [
+    // Зависимости для стабильности возвращаемого объекта
+    contextData,
+    getCurrentUsage,
+    getContextBreakdown,
+    estimateTokens,
+    updateContextUsage,
+    checkContextLimit,
+    resetContext
+  ]);
 }

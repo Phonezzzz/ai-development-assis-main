@@ -1,78 +1,43 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
-// Lightweight local replacement for @github/spark/hooks useKV
-// Stores values in localStorage. Suitable for private/local projects to avoid remote KV rate limits.
+/**
+ * Хук для работы с ключ-значение хранилищем на основе localStorage
+ */
+export function useKV<T>(key: string, defaultValue: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch (error) {
+      console.error(`Error reading localStorage key "${key}":`, JSON.stringify(error, null, 2));
+      return defaultValue;
+    }
+  });
 
-const KV_EVENT = 'kv-change';
+  const setStoredValue = useCallback((newValue: T | ((val: T) => T)) => {
+    try {
+      const valueToStore = newValue instanceof Function ? newValue(value) : newValue;
+      setValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) {
+      console.error(`Error setting localStorage key "${key}":`, JSON.stringify(error, null, 2));
+    }
+  }, [key, value]);
 
-function safeParse<T>(raw: string | null, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function stableStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return 'null';
-  }
-}
-
-export function useKV<T>(key: string, initialValue: T): [T, (next: T | ((prev: T) => T)) => void] {
-  const initialRef = useRef(initialValue);
-
-  const read = useCallback((): T => {
-    if (typeof window === 'undefined') return initialRef.current;
-    const raw = window.localStorage.getItem(key);
-    return safeParse<T>(raw, initialRef.current);
-  }, [key]);
-
-  const [value, setValue] = useState<T>(() => read());
-
-  const setAndStore = useCallback((next: T | ((prev: T) => T)) => {
-    setValue(prev => {
-      const resolved = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
-      if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.setItem(key, stableStringify(resolved));
-          window.dispatchEvent(new CustomEvent(KV_EVENT, { detail: { key, value: resolved } }));
-        } catch {
-          // ignore quota errors in local usage
-        }
-      }
-      return resolved;
-    });
-  }, [key]);
-
-  // Sync across tabs if needed
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onStorage = (e: StorageEvent) => {
-      if (e.storageArea === window.localStorage && e.key === key) {
-        setValue(read());
-      }
-    };
-    const onKvChange = (e: Event) => {
-      try {
-        const detail = (e as CustomEvent)?.detail;
-        if (detail?.key === key) {
-          setValue(read());
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === key && e.newValue) {
+        try {
+          setValue(JSON.parse(e.newValue));
+        } catch (error) {
+          console.error(`Error parsing localStorage key "${key}":`, JSON.stringify(error, null, 2));
         }
-      } catch {
-        // ignore
       }
     };
-    window.addEventListener('storage', onStorage);
-    window.addEventListener(KV_EVENT, onKvChange as EventListener);
-    return () => {
-      window.removeEventListener('storage', onStorage);
-      window.removeEventListener(KV_EVENT, onKvChange as EventListener);
-    };
-  }, [key, read]);
 
-  return [value, setAndStore];
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [key]);
+
+  return [value, setStoredValue] as const;
 }

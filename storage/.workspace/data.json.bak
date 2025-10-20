@@ -1,0 +1,40 @@
+{
+  "sessions": [
+    {
+      "id": "21929d3c-b763-41c3-b578-502f677096c5",
+      "name": "Test Session",
+      "description": "Test description",
+      "createdAt": "2025-10-08T00:17:07.261Z",
+      "updatedAt": "2025-10-08T00:17:46.383Z",
+      "metadata": {
+        "type": "user-created",
+        "status": "active"
+      },
+      "lastMessageAt": "2025-10-08T00:17:46.383Z"
+    },
+    {
+      "id": "9aca9878-2fb7-413c-a8a6-3bfdd2b27265",
+      "name": "Real API Test",
+      "description": "Testing real API integration",
+      "createdAt": "2025-10-08T00:20:40.247Z",
+      "updatedAt": "2025-10-08T00:20:40.247Z",
+      "metadata": {
+        "type": "user-created",
+        "status": "active"
+      }
+    }
+  ],
+  "messages": {
+    "21929d3c-b763-41c3-b578-502f677096c5": [
+      {
+        "id": "f4a5b485-4b19-4b37-b36e-67a452561295",
+        "sessionId": "21929d3c-b763-41c3-b578-502f677096c5",
+        "role": "user",
+        "content": "Hello, this is a test message",
+        "createdAt": "2025-10-08T00:17:46.383Z",
+        "metadata": {}
+      }
+    ],
+    "9aca9878-2fb7-413c-a8a6-3bfdd2b27265": []
+  }
+}

@@ -10,17 +10,30 @@ export function useImageModelSelection() {
   const availableImageModels: ModelOption[] = [
     {
       id: 'google/gemini-2.5-flash-image-preview',
-      name: 'Gemini 2.5 Flash Image Preview',
-      provider: 'Google', 
-      description: 'Модель для генерации изображений',
+      name: 'Gemini 2.5 Flash Image',
+      provider: 'Google',
+      description: 'Быстрая генерация изображений от Google',
       contextLength: 1000000,
       pricing: { prompt: 0.00125, completion: 0.005 },
+      free: false
+    },
+    {
+      id: 'openai/gpt-5-image-mini',
+      name: 'GPT-5 Image Mini',
+      provider: 'OpenAI',
+      description: 'Компактная модель для генерации изображений от OpenAI',
+      contextLength: 128000,
+      pricing: { prompt: 0.0015, completion: 0.006 },
       free: false
     }
   ];
 
   const getCurrentImageModel = useCallback(() => {
-    return availableImageModels.find(model => model.id === selectedImageModel) || availableImageModels[0];
+    const model = availableImageModels.find(model => model.id === selectedImageModel);
+    if (!model) {
+      throw new Error(`Image model not found: ${selectedImageModel}`);
+    }
+    return model;
   }, [selectedImageModel]);
 
   const selectImageModel = useCallback((modelId: string) => {

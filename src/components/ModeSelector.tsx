@@ -32,20 +32,18 @@ export function ModeSelector({ currentMode, onModeChange }: ModeSelectorProps) {
 
   return (
     <div className="flex gap-2 p-2 bg-card rounded-lg">
-      {modes.map((mode) => (
+      {modes.filter(mode => mode.id !== currentMode).map((mode) => (
         <Button
           key={mode.id}
-          variant={currentMode === mode.id ? 'default' : 'ghost'}
+          variant="ghost"
           size="sm"
           onClick={() => onModeChange(mode.id)}
           className={cn(
             "flex items-center gap-2 transition-all",
-            currentMode === mode.id 
-              ? "bg-primary text-primary-foreground shadow-lg" 
-              : "hover:bg-accent hover:text-accent-foreground"
+            "hover:bg-accent hover:text-accent-foreground"
           )}
         >
-          <mode.icon size={16} weight={currentMode === mode.id ? 'fill' : 'regular'} />
+          <mode.icon size={16} weight="regular" />
           <span className="font-medium">{mode.label}</span>
         </Button>
       ))}

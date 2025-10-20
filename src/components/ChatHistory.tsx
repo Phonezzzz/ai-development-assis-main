@@ -1,12 +1,12 @@
-import { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useKV } from '@/shims/spark-hooks';
-import { Message, GeneratedImage } from '@/lib/types';
+import { Message, AgentMessage } from '@/lib/types';
+import { ChatSession, ImageSession, WorkspaceSession, AnySession } from '@/lib/types/strict-types';
 import { cn, formatTimestamp } from '@/lib/utils';
 import { ChatCircle, Image as ImageIcon, CaretDown } from '@phosphor-icons/react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ChatStepPreview } from '@/components/ChatStepPreview';
 
 interface ChatHistoryProps {
   messages: Message[];
@@ -17,10 +17,10 @@ interface ChatHistoryProps {
 
 export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __unused, onLoadSession }: ChatHistoryProps) {
   // KV storages
-  const [chatSessions] = useKV<Array<{ id: string; title: string; messages: Message[]; timestamp: Date }>>('chat-sessions', []);
-  const [imageSessions] = useKV<Array<{ id: string; title: string; messages: Message[]; images: any[]; timestamp: Date; model: string }>>('image-chat-sessions', []);
+  const [chatSessions] = useKV<ChatSession[]>('chat-sessions', []);
+  const [imageSessions] = useKV<ImageSession[]>('image-chat-sessions', []);
   const [workspaceChat] = useKV<Array<{ id: string; question: string; answer: string; timestamp: Date; isTyping?: boolean }>>('workspace-chat', []);
-  const [workspaceSessions] = useKV<Array<{ id: string; title: string; messages: Message[]; timestamp: Date }>>('workspace-sessions', []);
+  const [workspaceSessions] = useKV<WorkspaceSession[]>('workspace-sessions', []);
 
   const [expanded, setExpanded] = useState<{ chat: boolean; image: boolean; workspace: boolean }>({
     chat: false,
@@ -28,6 +28,117 @@ export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __un
     workspace: false,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const normalizeDate = (value: Date | string | number | undefined | null) => {
+    if (!value) {
+      return undefined;
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  };
+
+  const isAgentMessage = (message: Message): message is AgentMessage => {
+    return Boolean(
+      (message as AgentMessage).agentState ||
+      (message as AgentMessage).actionType ||
+      (message as AgentMessage).goal ||
+      (message as AgentMessage).metadata
+    );
+  };
+
+  const formatMetadataValue = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return '—';
+    }
+    if (typeof value === 'object') {
+      try {
+        return '`' + JSON.stringify(value) + '`';
+      } catch {
+        return '—';
+      }
+    }
+    return String(value);
+  };
+
+  const formatStepsCount = (count: number) => {
+    if (!count || count < 0) {
+      return '';
+    }
+    const abs = count % 100;
+    const mod = abs % 10;
+    if (abs >= 11 && abs <= 19) {
+      return `${count} шагов`;
+    }
+    if (mod === 1) {
+      return `${count} шаг`;
+    }
+    if (mod >= 2 && mod <= 4) {
+      return `${count} шага`;
+    }
+    return `${count} шагов`;
+  };
+
+  const formatMessageBlock = (message: Message) => {
+    const role = message.type === 'user' ? 'Пользователь' : 'Ассистент';
+    const headerParts = [`**${role}**`];
+
+    if (message.workspaceMode) {
+      headerParts.push(`режим: ${message.workspaceMode}`);
+    }
+    if (message.agentType) {
+      headerParts.push(`агент: ${message.agentType}`);
+    }
+    if (isAgentMessage(message)) {
+      if (message.agentState) headerParts.push(`состояние: ${message.agentState}`);
+      if (message.actionType) headerParts.push(`действие: ${message.actionType}`);
+    }
+
+    const timestamp = normalizeDate(message.timestamp);
+    const timestampLine = timestamp ? `_Время: ${formatTimestamp(timestamp)}_` : '';
+
+    let block = `${headerParts.join(' · ')}${timestampLine ? `\n${timestampLine}` : ''}\n\n${message.content || 'Нет содержимого'}`;
+
+    if (isAgentMessage(message)) {
+      if (message.goal) {
+        block += `\n\n**Цель:** ${message.goal}`;
+      }
+      if (message.contextId) {
+        block += `\n\n**Контекст:** ${message.contextId}`;
+      }
+      if (message.metadata && Object.keys(message.metadata).length > 0) {
+        const metadataLines = Object.entries(message.metadata)
+          .map(([key, value]) => `- ${key}: ${formatMetadataValue(value)}`)
+          .join('\n');
+        if (metadataLines) {
+          block += `\n\n**Метаданные:**\n${metadataLines}`;
+        }
+      }
+    }
+
+    return block.trim();
+  };
+
+  const buildSessionContent = (session: AnySession, type: 'chat' | 'image' | 'workspace') => {
+    const messagesContent = (session.messages || []).map(formatMessageBlock).join('\n\n---\n\n');
+    const baseContent = messagesContent || '_Нет сообщений_';
+
+    if (type === 'image' && 'images' in session && Array.isArray(session.images) && session.images.length > 0) {
+      const imageDetails = session.images
+        .map((img: { id: string; url: string; prompt: string }, index: number) => {
+          if (!img || typeof img !== 'object') {
+            return `- Изображение ${index + 1}`;
+          }
+          const prompt = img.prompt ? ` — ${img.prompt}` : '';
+          const url = img.url ? ` ([ссылка](${img.url}))` : '';
+          return `- Изображение ${index + 1}${prompt}${url}`;
+        })
+        .join('\n');
+
+      return `**${session.title || 'Сессия'}**\n\n${baseContent}\n\n**Изображения:**\n${imageDetails}`.trim();
+    }
+
+    return `**${session.title || 'Сессия'}**\n\n${baseContent}`.trim();
+  };
 
   const toWorkspaceMessages = (entries: Array<{ id: string; question: string; answer: string; timestamp: Date }>): Message[] => {
     const list: Message[] = [];
@@ -54,32 +165,41 @@ export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __un
   ), [workspaceChat]);
 
   const chatList = useMemo(() => {
+    // chatSessions гарантирован как массив благодаря useKV defaultValue
     const list = [
       ...(currentChatSession ? [currentChatSession] : []),
-      ...(chatSessions || []),
-    ].sort((a, b) => new Date(b.timestamp as any).getTime() - new Date(a.timestamp as any).getTime());
+      ...chatSessions,
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return list;
   }, [currentChatSession, chatSessions]);
 
   const imageList = useMemo(() => {
-    const list = (imageSessions || []).sort((a, b) => new Date(b.timestamp as any).getTime() - new Date(a.timestamp as any).getTime());
+    // imageSessions гарантирован как массив благодаря useKV defaultValue
+    const list = imageSessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return list;
   }, [imageSessions]);
 
   const workspaceList = useMemo(() => {
+    // workspaceSessions гарантирован как массив благодаря useKV defaultValue
     const list = [
-      ...(currentWorkspaceSession ? [currentWorkspaceSession] as any[] : []),
-      ...(workspaceSessions || []),
-    ].sort((a, b) => new Date(b.timestamp as any).getTime() - new Date(a.timestamp as any).getTime());
+      ...(currentWorkspaceSession ? [currentWorkspaceSession] : []),
+      ...workspaceSessions,
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return list;
   }, [currentWorkspaceSession, workspaceSessions]);
 
   const getPreview = (msgs: Message[]) => {
     const lastUser = msgs.filter(m => m.type === 'user').pop();
-    return lastUser ? lastUser.content : (msgs[0]?.content || '');
+    if (lastUser) {
+      return lastUser.content;
+    }
+    if (msgs.length > 0) {
+      return msgs[0].content;
+    }
+    return '';
   };
 
-  const handleOpen = (session: any, type: 'chat' | 'image' | 'workspace') => {
+  const handleOpen = (session: AnySession, type: 'chat' | 'image' | 'workspace') => {
     setSelectedId(session.id);
     if (!onLoadSession) return;
     if (type === 'chat') {
@@ -92,7 +212,7 @@ export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __un
     }
   };
 
-  const SectionHeader = ({ icon, title, isOpen, onToggle }: { icon: React.ReactNode; title: string; isOpen: boolean; onToggle: () => void }) => (
+  const SectionHeader = ({ icon, title, isOpen, onToggle }: { icon: ReactNode; title: string; isOpen: boolean; onToggle: () => void }) => (
     <button
       type="button"
       onClick={onToggle}
@@ -111,44 +231,25 @@ export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __un
     </button>
   );
 
-  const ItemRow = ({ session, type }: { session: any; type: 'chat' | 'image' | 'workspace' }) => (
-    <TooltipProvider delayDuration={250}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            onClick={() => handleOpen(session, type)}
-            className={cn(
-              "px-3 py-2 rounded-md cursor-pointer select-none",
-              "hover:bg-accent/30 transition-colors",
-              selectedId === session.id && "bg-accent/40"
-            )}
-            title={session.title}
-          >
-            <div className="flex items-center gap-2">
-              <span className={cn(
-                "text-xs px-1.5 py-0.5 rounded border",
-                session.id === 'current' || session.id === 'current_ws'
-                  ? "border-primary/40 text-primary"
-                  : "border-muted-foreground/20 text-muted-foreground"
-              )}>
-                {type === 'image' ? 'IMG' : type === 'workspace' ? 'WS' : 'CHAT'}
-              </span>
-              <span className="text-sm truncate flex-1">{session.title}</span>
-              <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                {formatTimestamp(session.timestamp)}
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 truncate">
-              {getPreview(session.messages)}
-            </div>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="right" align="start" className="max-w-xs break-words">
-          {session.title}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
+  const renderSessionItem = (session: AnySession, type: 'chat' | 'image' | 'workspace') => {
+    const messages: Message[] = session.messages || [];
+    const meta = formatStepsCount(messages.length) || undefined;
+    const typeLabel = type === 'image' ? 'IMG' : type === 'workspace' ? 'WS' : 'CHAT';
+
+    return (
+      <ChatStepPreview
+        key={`${type}_${session.id}`}
+        title={session.title || 'Сессия'}
+        preview={getPreview(messages)}
+        content={buildSessionContent(session, type)}
+        typeLabel={typeLabel}
+        timestamp={normalizeDate(session.timestamp)}
+        meta={meta}
+        isActive={selectedId === session.id}
+        onSelect={() => handleOpen(session, type)}
+      />
+    );
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -166,8 +267,10 @@ export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __un
               {chatList.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">Пусто</div>
               ) : (
-                chatList.map((s) => (
-                  <ItemRow key={`chat_${s.id}`} session={s} type="chat" />
+                chatList.map((session) => (
+                  <React.Fragment key={session.id}>
+                    {renderSessionItem(session, 'chat')}
+                  </React.Fragment>
                 ))
               )}
             </div>
@@ -185,8 +288,10 @@ export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __un
               {imageList.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">Пусто</div>
               ) : (
-                imageList.map((s) => (
-                  <ItemRow key={`image_${s.id}`} session={s} type="image" />
+                imageList.map((session) => (
+                  <React.Fragment key={session.id}>
+                    {renderSessionItem(session, 'image')}
+                  </React.Fragment>
                 ))
               )}
             </div>
@@ -204,8 +309,10 @@ export function ChatHistory({ messages, onClearHistory: _unused, onNewChat: __un
               {workspaceList.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">Пусто</div>
               ) : (
-                workspaceList.map((s) => (
-                  <ItemRow key={`ws_${s.id}`} session={s} type="workspace" />
+                workspaceList.map((session) => (
+                  <React.Fragment key={session.id}>
+                    {renderSessionItem(session, 'workspace')}
+                  </React.Fragment>
                 ))
               )}
             </div>

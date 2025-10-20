@@ -1,5 +1,6 @@
 import { config } from '@/lib/config';
 import { openRouterService } from '@/lib/services/openrouter';
+import { isRecord } from '../types/strict-types';
 
 const DEBUG = String(import.meta.env.VITE_DEBUG || '').toLowerCase() === 'true';
 
@@ -41,44 +42,42 @@ class ImageGenerationService {
 
       return URL.createObjectURL(blob);
     } catch (error) {
-      console.error('Error converting base64 to blob:', error);
+      console.error('Error converting base64 to blob:', JSON.stringify(error, null, 2));
       // Fallback: возвращаем оригинальный data URL
       return base64Data;
     }
   }
 
   // Универсальный извлекатель URL изображения из произвольного JSON (Responses/Chat formats)
-  private tryExtractImageUrlFromObject(obj: any): string | null {
+  private tryExtractImageUrlFromObject(obj: unknown): string | null {
     try {
       if (!obj || typeof obj !== 'object') return null;
 
       // 1) Прямые варианты image_url
-      const tryGet = (candidate: any): string | null => {
+      const tryGet = (candidate: unknown): string | null => {
         if (!candidate) return null;
         if (typeof candidate === 'string' && (candidate.startsWith('http') || candidate.startsWith('data:image'))) {
           return candidate;
         }
-        if (typeof candidate === 'object') {
-          if (typeof candidate.url === 'string' && (candidate.url.startsWith('http') || candidate.url.startsWith('data:image'))) {
-            return candidate.url;
-          }
+        if (isRecord(candidate) && typeof candidate.url === 'string' && (candidate.url.startsWith('http') || candidate.url.startsWith('data:image'))) {
+          return candidate.url;
         }
         return null;
       };
 
       // Популярные поля
       const direct =
-        tryGet((obj as any).image_url) ||
-        tryGet((obj as any).image) ||
-        tryGet((obj as any).url);
+        (isRecord(obj) && tryGet(obj.image_url)) ||
+        (isRecord(obj) && tryGet(obj.image)) ||
+        (isRecord(obj) && tryGet(obj.url));
       if (direct) return direct;
 
       // 2) Частые контейнеры
       const containers = [
-        (obj as any).delta,
-        (obj as any).message,
-        (obj as any).data,
-        (obj as any).response,
+        isRecord(obj) ? obj.delta : undefined,
+        isRecord(obj) ? obj.message : undefined,
+        isRecord(obj) ? obj.data : undefined,
+        isRecord(obj) ? obj.response : undefined,
       ].filter(Boolean);
 
       for (const c of containers) {
@@ -87,14 +86,14 @@ class ImageGenerationService {
       }
 
       // 3) content как массив (Responses API: message/content[]; OpenAI-like)
-      const content = (obj as any).content;
+      const content = isRecord(obj) ? obj.content : undefined;
       if (Array.isArray(content)) {
         for (const item of content) {
           // item может иметь типы: output_image, image_url, image, и т.п.
           const byType =
-            tryGet(item?.image_url) ||
-            tryGet(item?.image) ||
-            tryGet(item?.url);
+            (isRecord(item) && tryGet(item.image_url)) ||
+            (isRecord(item) && tryGet(item.image)) ||
+            (isRecord(item) && tryGet(item.url));
           if (byType) return byType;
 
           // иногда изображение может лежать глубже
@@ -106,13 +105,13 @@ class ImageGenerationService {
       }
 
       // 4) output массив (Responses финальный объект)
-      const output = (obj as any).output || (obj as any).response?.output;
+      const output = (isRecord(obj) && obj.output) || (isRecord(obj) && isRecord(obj.response) && obj.response.output);
       if (Array.isArray(output)) {
         for (const item of output) {
           const outUrl =
-            tryGet(item?.image_url) ||
-            tryGet(item?.image) ||
-            tryGet(item?.url);
+            (isRecord(item) && tryGet(item.image_url)) ||
+            (isRecord(item) && tryGet(item.image)) ||
+            (isRecord(item) && tryGet(item.url));
           if (outUrl) return outUrl;
 
           const deeper = this.tryExtractImageUrlFromObject(item);
@@ -121,8 +120,9 @@ class ImageGenerationService {
       }
 
       // 5) перебор всех полей для редких структур
+      if (!isRecord(obj)) return null;
       for (const key of Object.keys(obj)) {
-        const val = (obj as any)[key];
+        const val = obj[key];
         if (val && typeof val === 'object') {
           const nested = this.tryExtractImageUrlFromObject(val);
           if (nested) return nested;
@@ -163,7 +163,7 @@ class ImageGenerationService {
       }
 
       if (parsed.choices) {
-        if (DEBUG) console.log('✓ Found choices array with length:', parsed.choices.length);
+        if (DEBUG) console.log('✓ Found choices array with length:', JSON.stringify(parsed.choices.length, null, 2));
         const choice = parsed.choices[0];
         if (DEBUG) {
           console.log('✓ Processing choice (debug)');
@@ -171,12 +171,12 @@ class ImageGenerationService {
         const delta = choice.delta;
         const message = choice.message;
         if (DEBUG) {
-          console.log('✓ Delta present:', !!delta);
-          console.log('✓ Message present:', !!message);
+          console.log('✓ Delta present:', JSON.stringify(!!delta, null, 2));
+          console.log('✓ Message present:', JSON.stringify(!!message, null, 2));
         }
 
         // Обработка base64 изображений в content
-        if (delta?.content && typeof delta.content === 'string') {
+        if (delta && delta.content && typeof delta.content === 'string') {
           if (DEBUG) console.log('Delta contains content (debug)');
 
           // Накапливаем содержимое для случая, когда base64 приходит частями
@@ -225,7 +225,7 @@ class ImageGenerationService {
           console.log('🔍 Checking delta.images (debug)');
         }
 
-        if (delta?.images && Array.isArray(delta.images) && delta.images.length > 0) {
+        if (delta && delta.images && Array.isArray(delta.images) && delta.images.length > 0) {
           if (DEBUG) console.log('✅ Found images in delta (debug)');
 
           for (let i = 0; i < delta.images.length; i++) {
@@ -254,7 +254,7 @@ class ImageGenerationService {
           console.log('🔍 Checking message.images (debug)');
         }
 
-        if (message?.images && Array.isArray(message.images) && message.images.length > 0) {
+        if (message && message.images && Array.isArray(message.images) && message.images.length > 0) {
           if (DEBUG) console.log('✅ Found images in message (debug)');
 
           for (let i = 0; i < message.images.length; i++) {
@@ -292,10 +292,8 @@ class ImageGenerationService {
       'Content-Type': 'application/json',
       'X-Title': 'AI Agent Workspace',
     };
-    const referer = typeof window !== 'undefined' && (window as any).location?.origin
-      ? window.location.origin
-      : 'http://localhost';
-    headers['HTTP-Referer'] = referer;
+    const referer = typeof window !== 'undefined' ? (window.location && window.location.origin ? window.location.origin : undefined) : undefined;
+    headers['HTTP-Referer'] = referer || 'http://localhost';
     if (this.isConfigured()) {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
@@ -314,13 +312,17 @@ class ImageGenerationService {
     }
 
     try {
+      if (!request.model) {
+        throw new Error('Image model must be specified');
+      }
+
       if (DEBUG) {
-        console.log('Sending image generation request (Responses API, debug):', { model: request.model || "google/gemini-2.5-flash-image-preview" });
+        console.log('Sending image generation request (Responses API):', { model: request.model });
       }
 
       // Используем Responses streaming API вместо chat/completions
       const reader = await openRouterService.createResponsesStream({
-        model: request.model || "google/gemini-2.5-flash-image-preview",
+        model: request.model,
         prompt: request.prompt,
         modalities: ['image', 'text'],
       });
@@ -385,7 +387,7 @@ class ImageGenerationService {
       };
 
     } catch (error) {
-      console.error("Ошибка генерации изображения:", error);
+      console.error("Ошибка генерации изображения:", JSON.stringify(error, null, 2));
       return {
         success: false,
         error: `Ошибка API: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`
@@ -408,7 +410,7 @@ class ImageGenerationService {
       });
 
       if (!response.ok) {
-        console.error('Ошибка получения списка моделей:', response.status);
+        console.error('Ошибка получения списка моделей:', JSON.stringify(response.status, null, 2));
         return ['google/gemini-2.5-flash-image-preview']; // fallback
       }
 
@@ -416,14 +418,16 @@ class ImageGenerationService {
       const models = data.data || [];
 
       // Фильтруем модели с поддержкой генерации изображений
-      const imageModels = models.filter((model: any) =>
-        model.output_modalities &&
-        model.output_modalities.includes('image')
-      ).map((model: any) => model.id);
+      const imageModels = models
+        .filter((model: { id?: string; name?: string; output_modalities?: string[] }) =>
+          model.output_modalities &&
+          model.output_modalities.includes('image')
+        )
+        .map((model: { id: string }) => model.id);
 
       return imageModels.length > 0 ? imageModels : ['google/gemini-2.5-flash-image-preview'];
     } catch (error) {
-      console.error('Ошибка проверки моделей:', error);
+      console.error('Ошибка проверки моделей:', JSON.stringify(error, null, 2));
       return ['google/gemini-2.5-flash-image-preview']; // fallback
     }
   }

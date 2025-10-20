@@ -1,29 +1,32 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ModernChatInput } from '@/components/ModernChatInput';
 import { MarkdownMessage } from '@/components/MarkdownMessage';
 import { GeneratedImage, WorkspaceMode, Message } from '@/lib/types';
-import { useKV } from '@/shims/spark-hooks';
 import { useImageModelSelection } from '@/hooks/use-image-model-selection';
-import { imageGenerationService } from '@/lib/services/image-generation';
-import type { ChatCompletionRequest } from '@/lib/services/openrouter';
-import { openRouterService } from '@/lib/services/openrouter';
 import { formatDisplayDate } from '@/lib/utils';
-import { Image, Download, Trash, Plus, User, Robot, Square } from '@phosphor-icons/react';
-import { useTTS } from '@/hooks/use-tts';
-
-// Добавлено: кнопки действий над сообщением (в т.ч. TTS)
+import { Download, Square } from '@phosphor-icons/react';
+import { useVoice } from '@/hooks/useVoice';
+import { cn } from '@/lib/utils';
 import { MessageActions } from '@/components/MessageActions';
 
-// Управление детализацией логов в компоненте
-const DEBUG = String(import.meta.env.VITE_DEBUG || '').toLowerCase() === 'true';
+// Импортируем новые hooks
+import { useImageHistory } from '@/hooks/useImageHistory';
+import { useImageGallery } from '@/hooks/useImageGallery';
+import { useImageGeneration } from '@/hooks/useImageGeneration';
+import { useKV } from '@/shims/spark-hooks';
+
 interface ImageCreatorModeProps {
-  messages?: any[];
+  messages?: Message[];
   onSendMessage?: (text: string, mode: WorkspaceMode, isVoice?: boolean) => void;
   isProcessing?: boolean;
   showGallery?: boolean;
@@ -31,166 +34,70 @@ interface ImageCreatorModeProps {
 }
 
 export function ImageCreatorMode({ onSendMessage, showGallery = false, onToggleGallery }: ImageCreatorModeProps) {
-  // KV stores
-  const [images, setImages] = useKV<GeneratedImage[]>('generated-images', []);
-  const [imageMessages, setImageMessages] = useKV<Message[]>('image-creation-messages', []);
-  const [allImages, setAllImages] = useKV<GeneratedImage[]>('all-generated-images', []);
-  const [imageSessions, setImageSessions] = useKV<Array<{
-    id: string;
-    title: string;
-    messages: Message[];
-    images: GeneratedImage[];
-    timestamp: Date;
-    model: string;
-  }>>('image-chat-sessions', []);
-
-  // Синхронизируем глобальную галерею как объединение изображений из всех сессий и текущей сессии
-  useEffect(() => {
-    const fromSessions = imageSessions.flatMap(session => session.images || []);
-    const fromCurrent = images || [];
-    const combined = [...fromSessions, ...fromCurrent];
-
-    const uniqueCombined = combined.filter((image, index, self) =>
-      index === self.findIndex(img => img.id === image.id)
-    );
-
-    // Обновляем только если состав изменился
-    const differsByLength = uniqueCombined.length !== allImages.length;
-    const differsByIds =
-      differsByLength ||
-      uniqueCombined.some(img => !allImages.find(existing => existing.id === img.id)) ||
-      allImages.some(img => !uniqueCombined.find(existing => existing.id === img.id));
-
-    if (differsByIds) {
-      setAllImages(uniqueCombined);
-    }
-  }, [imageSessions, images, allImages.length, setAllImages]);
-
-  // Добавлено: refs для отмены стриминга и TTS
-  const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
-  const isStreamCancelledRef = useRef(false);
-  const { speak: ttsSpeak, stop: ttsStop, ttsState } = useTTS();
-
+  // State
   const [isGenerating, setIsGenerating] = useState(false);
-  const { currentImageModel } = useImageModelSelection();
+  const [images, setImages] = useKV<GeneratedImage[]>('generated-images', []);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  // Останавливаем TTS при размонтировании компонента
-  useEffect(() => {
-    return () => {
-      try { ttsStop(); } catch {}
-    };
-  }, [ttsStop]);
 
-  // Функция для прокрутки к низу чата
-  const scrollToBottom = () => {
+  // Hooks
+  const { tts: { speak: ttsSpeak, stop: ttsStop } } = useVoice();
+  const { currentImageModel, availableImageModels, selectImageModel } = useImageModelSelection();
+  const {
+    imageMessages,
+    imageSessions,
+    addMessage,
+    updateLastAssistantMessage,
+    clearHistory,
+    createSessionFromHistory,
+  } = useImageHistory();
+
+  const { allImages, downloadImage } = useImageGallery(images, imageSessions);
+
+  // Callbacks для useImageGeneration
+  const generationCallbacks = {
+    onAddMessage: addMessage,
+    onUpdateMessage: updateLastAssistantMessage,
+    onAddImage: (image: GeneratedImage) => {
+      setImages(prev => [image, ...(prev || [])]);
+    },
+    onUpdateImage: (imageId: string, url: string, isGenerating: boolean) => {
+      setImages(prev =>
+        (prev || []).map(img =>
+          img.id === imageId
+            ? { ...img, url, isGenerating }
+            : img
+        )
+      );
+    },
+    onRemoveImage: (imageId: string) => {
+      setImages(prev => (prev || []).filter(img => img.id !== imageId));
+    },
+    onSetGenerating: setIsGenerating,
+  };
+
+  const { handleUserMessage, cancelGeneration } = useImageGeneration(generationCallbacks);
+
+  // Handlers
+  const handleSendMessage = useCallback(async (text: string, isVoice: boolean = false) => {
+    await handleUserMessage(text, isVoice, currentImageModel?.id, ttsSpeak);
+  }, [handleUserMessage, currentImageModel?.id, ttsSpeak]);
+
+  const handleStartNewSession = useCallback(() => {
+    createSessionFromHistory(images, currentImageModel?.name || 'Unknown');
+    setImages([]);
+    clearHistory();
+  }, [images, currentImageModel?.name, createSessionFromHistory, setImages, clearHistory]);
+
+  const scrollToBottom = useCallback(() => {
     if (chatScrollRef.current) {
-      // Ищем ScrollArea viewport
       const scrollArea = chatScrollRef.current.closest('[data-radix-scroll-area-viewport]');
       if (scrollArea) {
         scrollArea.scrollTop = scrollArea.scrollHeight;
-      } else {
-        // Fallback для обычного скролла
-        chatScrollRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }
     }
-  };
+  }, []);
 
-  // Автоматически прокручиваем при новых сообщениях
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollToBottom();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [imageMessages]);
-
-  // Также прокручиваем при завершении генерации
-  useEffect(() => {
-    if (!isGenerating) {
-      const timer = setTimeout(() => {
-        scrollToBottom();
-      }, 200);
-      return () => clearTimeout(timer);
-    }
-  }, [isGenerating]);
-
-  // Функция для сброса зависших изображений
-  const resetStuckImages = () => {
-    setImages((prev) => (prev || []).map(img =>
-      img.isGenerating ? { ...img, isGenerating: false, url: '' } : img
-    ).filter(img => img.url !== ''));
-    setIsGenerating(false);
-  };
-
-  // Функция для отмены текущей генерации
-  const cancelGeneration = () => {
-    setIsGenerating(false);
-    setImages((prev) => (prev || []).filter(img => !img.isGenerating));
-    // Добавлено: отмена активного стрима ответа модели и остановка озвучки
-    try {
-      isStreamCancelledRef.current = true;
-      streamReaderRef.current?.cancel().catch(() => {});
-    } catch {}
-    streamReaderRef.current = null;
-    ttsStop();
-  };
-
-  // Функция для создания нового чата Image Creator (локальная, если нужно)
-  const startNewImageChat = () => {
-    // Сохраняем текущую сессию если есть сообщения или изображения
-    if (imageMessages.length > 0 || images.length > 0) {
-      const sessionId = `img_session_${Date.now()}`;
-      const userMessages = imageMessages.filter(msg => msg.type === 'user');
-      const sessionTitle = userMessages.length > 0
-        ? userMessages[0].content.substring(0, 50) + (userMessages[0].content.length > 50 ? '...' : '')
-        : `Сессия с ${images.length} изображениями`;
-
-      const newSession = {
-        id: sessionId,
-        title: sessionTitle,
-        messages: [...imageMessages],
-        images: [...images],
-        timestamp: new Date(),
-        model: currentImageModel?.name || 'Unknown Model'
-      };
-
-      setImageSessions(prev => [newSession, ...prev]);
-
-      // Добавляем изображения из текущей сессии в общую галерею
-      if (images.length > 0) {
-        setAllImages(prev => [...images, ...prev]);
-      }
-    }
-
-    // Очищаем текущие данные
-    setImageMessages([]);
-    setImages([]);
-    setIsGenerating(false);
-  };
-
-
-  const deleteImage = (imageId: string) => {
-    setImages((prev) => (prev || []).filter(img => img.id !== imageId));
-  };
-
-  const downloadImage = async (imageUrl: string, filename: string) => {
-    try {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Download failed:', error);
-    }
-  };
-
+  // Render
   return (
     <div className="flex flex-col h-full">
       {showGallery ? (
@@ -256,14 +163,22 @@ export function ImageCreatorMode({ onSendMessage, showGallery = false, onToggleG
                         <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                           {message.type === 'user' ? (
                             <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20">
-                              <MarkdownMessage content={message.content} className="prose-primary text-sm" />
+                              <MarkdownMessage
+                                content={message.content}
+                                className="prose-primary text-sm"
+                                copyButtonVariant="icon"
+                              />
                               <p className="text-xs text-muted-foreground mt-2">
                                 {formatDisplayDate(message.timestamp)}
                               </p>
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              <MarkdownMessage content={message.content} className="prose-default text-sm" />
+                              <MarkdownMessage
+                                content={message.content}
+                                className="prose-default text-sm"
+                                showCopyButton={false}
+                              />
                               <div className="flex items-center justify-between">
                                 <div className="text-xs text-muted-foreground">
                                   {formatDisplayDate(message.timestamp)}
@@ -271,7 +186,7 @@ export function ImageCreatorMode({ onSendMessage, showGallery = false, onToggleG
                                 <MessageActions
                                   message={message.content}
                                   messageId={message.id}
-                                  isGenerating={isGenerating && message.id === imageMessages[imageMessages.length - 1]?.id}
+                                  isGenerating={isGenerating && imageMessages.length > 0 && message.id === imageMessages[imageMessages.length - 1].id}
                                   onStopGeneration={cancelGeneration}
                                 />
                               </div>
@@ -361,9 +276,31 @@ export function ImageCreatorMode({ onSendMessage, showGallery = false, onToggleG
       {/* Chat Input - Always visible at bottom */}
       <div className="p-4 bg-card/80 backdrop-blur-sm flex-shrink-0">
         <div className="mb-2 flex items-center justify-between">
-          <Badge variant="secondary" className="text-xs">
-            Модель: {currentImageModel?.name || 'Не выбрана'}
-          </Badge>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="secondary" size="sm" className="h-6 text-xs">
+                🎨 {currentImageModel ? currentImageModel.name : 'Выбрать модель'}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              {availableImageModels.map((model) => (
+                <DropdownMenuItem
+                  key={model.id}
+                  onClick={() => selectImageModel(model.id)}
+                  className="flex flex-col items-start gap-1 p-3"
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-medium">{model.name}</span>
+                    {currentImageModel && currentImageModel.id === model.id && (
+                      <Badge variant="default" className="text-xs">Выбрано</Badge>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">{model.description}</span>
+                  <span className="text-xs text-muted-foreground">Provider: {model.provider}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {isGenerating && (
             <Button
               variant="destructive"
@@ -379,18 +316,16 @@ export function ImageCreatorMode({ onSendMessage, showGallery = false, onToggleG
             <Button
               variant="outline"
               size="sm"
-              onClick={resetStuckImages}
+              onClick={handleStartNewSession}
               className="h-6 text-xs"
             >
-              Сбросить зависшие
+              Сохранить сессию
             </Button>
           )}
         </div>
         <ModernChatInput
           onSubmit={(text, mode, isVoice) => {
-            if (text.trim()) {
-              handleUserMessage(text, isVoice);
-            }
+            handleSendMessage(text, isVoice);
           }}
           placeholder="Поговорите с ИИ или попросите создать изображение..."
           disabled={isGenerating}
@@ -398,409 +333,4 @@ export function ImageCreatorMode({ onSendMessage, showGallery = false, onToggleG
       </div>
     </div>
   );
-
-  // Детектор «запроса на изображение»: поддержка RU/EN и типичных формулировок
-  function isImageRequest(text: string): boolean {
-    const t = text.trim().toLowerCase();
-    if (!t) return false;
-    const keywords = [
-      'изобр', 'картин', 'рисунк', 'нарис', 'сгенер', 'созда', 'арт',
-      'логотип', 'иконк', 'фото', 'обложк', 'баннер', 'аватар', 'постер', 'обои',
-      'wallpaper', 'image', 'img', 'picture', 'photo', 'render', 'generate', 'draw', 'logo', 'icon'
-    ];
-    const verbsRu = /(сделай|создай|нарисуй|сгенерируй|покажи)\b/;
-    const verbsEn = /\b(make|create|generate|draw|render|show)\b/;
-    return keywords.some(k => t.includes(k)) || verbsRu.test(t) || verbsEn.test(t);
-  }
-
-  async function handleUserMessage(text: string, isVoice: boolean = false) {
-    const clean = text.trim();
-    if (!clean) return;
-
-    try {
-      // Проверяем API ключ
-      if (!imageGenerationService.isConfigured()) {
-        throw new Error('OpenRouter API ключ не настроен. Проверьте переменную VITE_OPENROUTER_API_KEY в .env.local');
-      }
-
-      // Если пользователь просит ИЗОБРАЖЕНИЕ — переключаемся на сервис генерации изображений
-      if (isImageRequest(clean)) {
-        if (DEBUG) console.log('Routing to image generation service with prompt');
-        await generateImageFromPrompt(clean);
-        return;
-      }
-
-      // Иначе — обычный текстовый диалог (стриминг)
-      const userMessage: Message = {
-        id: `msg_${Date.now()}_user`,
-        type: 'user',
-        content: clean,
-        timestamp: new Date(),
-        isVoice: isVoice,
-      };
-
-      setImageMessages((prev) => [...prev, userMessage]);
-      setIsGenerating(true);
-
-      let timeoutId: NodeJS.Timeout | null = null;
-
-      // Неполный лог, поскольку `import.meta.env.DEV` возвращает false в продакшн, однако запрос попадает в продакшн.
-      if (DEBUG) console.log('Sending chat message to image model:', currentImageModel?.id);
-
-      // Отправляем сообщение модели для обычного чата (без принудительной генерации изображения)
-      const chatRequest: ChatCompletionRequest = {
-        model: currentImageModel?.id || "google/gemini-2.5-flash-image-preview",
-        messages: [
-          {
-            role: 'system',
-            content: "Ты помощник, который может общаться и создавать изображения. Если пользователь просит создать, нарисовать, сгенерировать изображение, то создай изображение. В остальных случаях просто отвечай текстом."
-          },
-          {
-            role: 'user',
-            content: clean
-          }
-        ],
-        modalities: ['text', 'image'],
-        stream: true
-      };
-
-      const reader = await openRouterService.createChatCompletionStream(chatRequest);
-      const decoder = new TextDecoder();
-      // Добавлено: сохраняем reader и сбрасываем флаг отмены
-      isStreamCancelledRef.current = false;
-      streamReaderRef.current = reader;
-
-      let assistantMessage = '';
-      let assistantMessageId = `msg_${Date.now()}_assistant`;
-      let foundImage = false;
-
-      // Добавляем предварительное сообщение ассистента
-      const initialAssistantMessage: Message = {
-        id: assistantMessageId,
-        type: 'assistant',
-        content: '',
-        timestamp: new Date(),
-        isVoice: false,
-      };
-
-      setImageMessages((prev) => [...prev, initialAssistantMessage]);
-
-      // Таймаут для генерации изображений (30 секунд)
-      timeoutId = setTimeout(() => {
-        if (DEBUG) console.log('Image generation timeout - resetting stuck images');
-        resetStuckImages();
-      }, 30000);
-
-      let incompleteData = '';
-
-      while (true) {
-        // Прерывание по требованию пользователя
-        if (isStreamCancelledRef.current) {
-          try { await reader.cancel(); } catch {}
-          break;
-        }
-        const { done, value } = await reader.read();
-        if (done) {
-          // Обрабатываем оставшиеся неполные данные
-          if (incompleteData.trim() && (incompleteData.trim().startsWith('data:') || incompleteData.trim().startsWith('data: '))) {
-            const trimmed = incompleteData.trim();
-            const data = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed.slice(5).trim();
-            if (data !== '[DONE]') {
-              try {
-                const parsed = JSON.parse(data);
-                if (DEBUG) console.log('Processing final incomplete chunk');
-                if (parsed.choices && parsed.choices[0]) {
-                  const delta = parsed.choices[0].delta;
-
-                  // Обработка изображений в финальном чанке
-                  if (delta?.images && Array.isArray(delta.images) && delta.images.length > 0) {
-                    for (const image of delta.images) {
-                      if (image?.image_url?.url) {
-                        foundImage = true;
-                        await handleGeneratedImage(image.image_url.url, clean);
-                        break;
-                      }
-                    }
-                  }
-
-                  // Обработка текста в финальном чанке
-                  if (delta?.content) {
-                    assistantMessage += delta.content;
-                    setImageMessages((prev) => prev.map(msg =>
-                      msg.id === assistantMessageId
-                        ? { ...msg, content: assistantMessage }
-                        : msg
-                    ));
-                  }
-                }
-              } catch (e) {
-                if (DEBUG) console.log('Failed to parse final chunk (debug)', e);
-              }
-            }
-          }
-          break;
-        }
-
-        const chunk = decoder.decode(value);
-        const fullChunk = incompleteData + chunk;
-        const lines = fullChunk.split('\n');
-
-        // Последняя строка может быть неполной
-        incompleteData = lines.pop() || '';
-
-        for (const line of lines) {
-          // Улучшенная обработка SSE чанков
-          const trimmed = line.trim();
-          if (!trimmed) continue; // пропуск пустых строк
-          if (!(trimmed.startsWith('data:') || trimmed.startsWith('data: '))) continue; // пропуск не-SSE линий
-          const data = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed.slice(5).trim();
-          if (data !== '[DONE]') {
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.choices && parsed.choices[0]) {
-                const delta = parsed.choices[0].delta;
-
-                // Обработка текста
-                if (delta?.content) {
-                  assistantMessage += delta.content;
-
-                  // Обновляем сообщение ассистента в реальном времени
-                  setImageMessages((prev) => prev.map(msg =>
-                    msg.id === assistantMessageId
-                      ? { ...msg, content: assistantMessage }
-                      : msg
-                  ));
-                }
-
-                // Обработка изображений
-                if (delta?.images && Array.isArray(delta.images) && delta.images.length > 0) {
-                  for (const image of delta.images) {
-                    if (image?.image_url?.url) {
-                      foundImage = true;
-                      await handleGeneratedImage(image.image_url.url, clean);
-                      break;
-                    }
-                  }
-                }
-              }
-            } catch (e) {
-              // Без дампа содержимого чанков, чтобы не шуметь и не утекали данные
-              if (DEBUG) console.log('Failed to parse JSON chunk (debug)', e);
-            }
-          }
-        }
-      }
-
-      // Очищаем таймаут
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      // Очистка ссылок на стрим
-      streamReaderRef.current = null;
-      isStreamCancelledRef.current = false;
-
-      // Если не было найдено изображений, просто завершаем текстовый ответ
-      if (!foundImage && assistantMessage.trim()) {
-        setImageMessages((prev) => prev.map(msg =>
-          msg.id === assistantMessageId
-            ? { ...msg, content: assistantMessage.trim() || 'Получен пустой ответ от модели.' }
-            : msg
-        ));
-        // Добавлено: авто-озвучка ответа, если запрос был голосовым
-        if (isVoice && !isStreamCancelledRef.current) {
-          try {
-            ttsStop();
-            await ttsSpeak(assistantMessage.trim());
-          } catch {}
-        }
-      }
-
-    } catch (error) {
-      console.error('Ошибка отправки сообщения:', error);
-
-      const errorMessage: Message = {
-        id: `msg_${Date.now()}_error`,
-        type: 'assistant',
-        content: `❌ Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
-        timestamp: new Date(),
-        isVoice: false,
-      };
-
-      setImageMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsGenerating(false);
-      // Гарантированная очистка стрима
-      streamReaderRef.current = null;
-      isStreamCancelledRef.current = false;
-    }
-  }
-
-  async function handleGeneratedImage(imageUrl: string, originalPrompt: string) {
-    if (DEBUG) console.log('Processing generated image');
-    // Проверяем, что изображение действительно было сгенерировано
-    if (!imageUrl || imageUrl.trim() === '') {
-      console.error('Empty image URL received');
-      return;
-    }
-
-    const imageId = `img_${Date.now()}`;
-    const newImage: GeneratedImage = {
-      id: imageId,
-      prompt: originalPrompt,
-      url: imageUrl,
-      timestamp: new Date(),
-      isGenerating: false,
-    };
-
-    // Удаляем зависшие изображения и добавляем новое
-    setImages((prev) => {
-      const cleanedImages = (prev || []).filter(img => !img.isGenerating);
-      return [newImage, ...cleanedImages];
-    });
-
-    // Добавляем сообщение об успешном создании изображения
-    const completionMessage: Message = {
-      id: `msg_${Date.now()}_completion`,
-      type: 'assistant',
-      content: `✅ Изображение создано успешно! Результат добавлен в галерею.`,
-      timestamp: new Date(),
-      isVoice: false,
-    };
-
-    setImageMessages((prev) => [...prev, completionMessage]);
-  }
-
-  async function generateImageFromPrompt(promptText: string) {
-    // Добавляем пользовательское сообщение
-    const userMessage: Message = {
-      id: `msg_${Date.now()}_user`,
-      type: 'user',
-      content: promptText.trim(),
-      timestamp: new Date(),
-      isVoice: false,
-    };
-
-    setImageMessages((prev) => [...prev, userMessage]);
-
-    const imageId = `img_${Date.now()}`;
-    const newImage: GeneratedImage = {
-      id: imageId,
-      prompt: promptText.trim(),
-      url: '', // Будет заполнен после генерации
-      timestamp: new Date(),
-      isGenerating: true,
-    };
-
-    setImages((prev) => [newImage, ...(prev || [])]);
-    setIsGenerating(true);
-
-    // Добавляем системное сообщение о начале генерации
-    const systemMessage: Message = {
-      id: `msg_${Date.now()}_system`,
-      type: 'assistant',
-      content: `🎨 Начинаю создание изображения с помощью ${currentImageModel?.name}...`,
-      timestamp: new Date(),
-      isVoice: false,
-    };
-
-    setImageMessages((prev) => [...prev, systemMessage]);
-
-    try {
-      // Проверяем API ключ
-      if (!imageGenerationService.isConfigured()) {
-        throw new Error('OpenRouter API ключ не настроен. Проверьте переменную VITE_OPENROUTER_API_KEY в .env.local');
-      }
-
-      if (DEBUG) console.log('Generating image with model:', currentImageModel?.id);
-      
-      // Реальная генерация через API с прогрессивной загрузкой
-      const result = await imageGenerationService.generateImage({
-        prompt: promptText.trim(),
-        model: currentImageModel?.id || "google/gemini-2.5-flash-image-preview",
-        onProgress: (partialImageUrl, status) => {
-          if (DEBUG) console.log('Progress update');
-          if (partialImageUrl) {
-            // Обновляем изображение с полученным URL
-            setImages((prev) => (prev || []).map(img =>
-              img.id === imageId
-                ? { ...img, isGenerating: false, url: partialImageUrl }
-                : img
-            ));
-          }
-
-          // Добавляем сообщение о статусе
-          if (status) {
-            const statusMessage: Message = {
-              id: `msg_${Date.now()}_status`,
-              type: 'assistant',
-              content: `🔄 ${status}`,
-              timestamp: new Date(),
-              isVoice: false,
-            };
-
-            setImageMessages((prev) => {
-              // Заменяем последнее статусное сообщение или добавляем новое
-              const lastMessage = prev[prev.length - 1];
-              if (lastMessage && lastMessage.content.startsWith('🔄')) {
-                return [...prev.slice(0, -1), statusMessage];
-              } else {
-                return [...prev, statusMessage];
-              }
-            });
-          }
-        }
-      });
-
-      if (DEBUG) console.log('Image generation result');
-      console.log('Image generation result:', result);
-
-      if (result.success && result.imageUrl) {
-        // Обновляем изображение с реальным URL
-        setImages((prev) => (prev || []).map(img => 
-          img.id === imageId 
-            ? { ...img, isGenerating: false, url: result.imageUrl! }
-            : img
-        ));
-
-        // Добавляем сообщение об успешном завершении
-        const completionMessage: Message = {
-          id: `msg_${Date.now()}_completion`,
-          type: 'assistant',
-          content: `✅ Изображение создано успешно! Результат добавлен в галерею.`,
-          timestamp: new Date(),
-          isVoice: false,
-        };
-
-        setImageMessages((prev) => [...prev, completionMessage]);
-      } else {
-        // Ошибка генерации
-        setImages((prev) => (prev || []).filter(img => img.id !== imageId));
-
-        const errorMessage: Message = {
-          id: `msg_${Date.now()}_error`,
-          type: 'assistant',
-          content: `❌ Ошибка создания изображения: ${result.error || 'Неизвестная ошибка'}`,
-          timestamp: new Date(),
-          isVoice: false,
-        };
-
-        setImageMessages((prev) => [...prev, errorMessage]);
-      }
-    } catch (error) {
-      // Обработка исключений
-      setImages((prev) => (prev || []).filter(img => img.id !== imageId));
-      
-      const errorMessage: Message = {
-        id: `msg_${Date.now()}_error`,
-        type: 'assistant',
-        content: `❌ Ошибка создания изображения: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
-        timestamp: new Date(),
-        isVoice: false,
-      };
-
-      setImageMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsGenerating(false);
-    }
-  }
 }

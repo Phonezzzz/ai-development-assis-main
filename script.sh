@@ -1,4 +1,3 @@
-```bash
 #!/bin/bash
 
 # --- НАСТРОЙКИ ---
@@ -43,4 +42,4 @@ find "$PROJECT_ROOT" -type f \( "${exclude_params[@]}" \) -prune -o -type f \( "
 done
 
 echo "Готово! Проект сохранен в: $OUTPUT_FILE"
-```
+

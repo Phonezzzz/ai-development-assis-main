@@ -8,7 +8,6 @@ import { MessageActions } from '@/components/MessageActions';
 import { MarkdownMessage } from '@/components/MarkdownMessage';
 import { Message, WorkspaceMode } from '@/lib/types';
 import { cn, formatTimestamp } from '@/lib/utils';
-import { useVoiceRecognition } from '@/hooks/use-voice';
 import { useModelSelection } from '@/hooks/use-model-selection';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,7 +21,6 @@ interface ChatModeProps {
 }
 
 export function ChatMode({ messages, onSendMessage, isProcessing }: ChatModeProps) {
-  const { speak } = useVoiceRecognition();
   const { currentModel } = useModelSelection();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [, forceUpdate] = useState({});
@@ -204,13 +202,13 @@ export function ChatMode({ messages, onSendMessage, isProcessing }: ChatModeProp
                         message.type === 'user' ? "items-end" : "items-start"
                       )}
                     >
-                      {message.type === 'agent' && (
+                      {message.type === 'assistant' && message.agentType && (
                         <div className="flex items-center gap-2 mb-1">
                           <Badge
                             variant="outline"
                             className="text-xs font-medium text-muted-foreground border-muted-foreground/30"
                           >
-                            {message.agentType || 'Agent'}
+                            {message.agentType}
                           </Badge>
                           {message.isVoice && (
                             <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">

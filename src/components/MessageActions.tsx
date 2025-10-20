@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Play, Stop, Copy, ArrowClockwise, Square } from '@phosphor-icons/react';
-import { useTTS } from '@/hooks/use-tts';
+import { useVoice } from '@/hooks/useVoice';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -16,30 +16,30 @@ interface MessageActionsProps {
 }
 
 export function MessageActions({ message, messageId, className = '', isGenerating = false, onStopGeneration }: MessageActionsProps) {
-  const { ttsState, toggle, stop } = useTTS();
+  const { tts: { state: ttsState, speak, stop } } = useVoice();
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(message);
       toast.success('Сообщение скопировано');
     } catch (error) {
-      console.error('Failed to copy message:', error);
+      console.error('Failed to copy message:', JSON.stringify(error, null, 2));
       toast.error('Ошибка при копировании');
     }
   };
 
-  const isThisLoading = Boolean(ttsState.isLoading && ttsState.currentMessageId === messageId);
-  const isThisPlaying = Boolean(ttsState.isPlaying && ttsState.currentMessageId === messageId);
+  const isThisLoading = Boolean(ttsState && ttsState.isLoading && ttsState.currentMessageId === messageId);
+  const isThisPlaying = Boolean(ttsState && ttsState.isPlaying && ttsState.currentMessageId === messageId);
 
   const handleTTS = async () => {
     try {
       if (isThisPlaying) {
         stop();
       } else {
-        await toggle(messageId, message);
+        await speak(message);
       }
     } catch (error) {
-      console.error('TTS error:', error);
+      console.error('TTS error:', JSON.stringify(error, null, 2));
       toast.error('Ошибка воспроизведения речи');
     }
   };
@@ -127,7 +127,7 @@ export function MessageActions({ message, messageId, className = '', isGeneratin
         </Tooltip>
       </TooltipProvider>
 
-      {ttsState.error && (
+      {ttsState && ttsState.error && (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

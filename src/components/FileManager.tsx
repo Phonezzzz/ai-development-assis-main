@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { ProjectFile } from '@/lib/types';
 import { FileTreeNode } from '@/lib/services/file-indexer';
 import { fileIndexerService } from '@/lib/services/file-indexer';
+import { ProjectIndex } from '@/lib/services/file-indexer';
 import { toast } from 'sonner';
 import {
   Folder,
@@ -61,13 +62,20 @@ export function FileManager({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('explorer');
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
-  const [projectIndexes, setProjectIndexes] = useState<any[]>([]);
-  const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const [projectIndexes, setProjectIndexes] = useState<ProjectIndex[]>([]);
+  const [selectedProject, setSelectedProject] = useState<ProjectIndex | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const isExpanded = (path: string) => expandedNodes[path] ?? false;
+  const isExpanded = (path: string) => {
+    const expanded = expandedNodes[path];
+    return expanded !== undefined ? expanded : false;
+  };
+  
   const toggleNode = (path: string) => {
-    setExpandedNodes(prev => ({ ...prev, [path]: !(prev[path] ?? false) }));
+    setExpandedNodes(prev => ({ 
+      ...prev, 
+      [path]: !(prev[path] !== undefined ? prev[path] : false) 
+    }));
   };
 
   const buildFileSystemTree = (files: ProjectFile[]): FileSystemNode => {
@@ -91,24 +99,28 @@ export function FileManager({
 
     if (pathParts.length === 1) {
       // This is a file
-      parent.children = parent.children || [];
+      if (!parent.children) {
+        parent.children = [];
+      }
       parent.children.push({
         name: pathParts[0],
         type: 'file',
         path: file.path,
         size: file.size,
         metadata: {
-          language: file.metadata?.language,
-          extension: file.metadata?.extension,
+          language: file.metadata.language,
+          extension: file.metadata.extension,
           lastModified: file.lastModified,
-          isTextFile: file.metadata?.isTextFile,
-          isBinary: file.metadata?.isBinary,
+          isTextFile: file.metadata.isTextFile,
+          isBinary: file.metadata.isBinary,
         },
       });
     } else {
       // This is a directory
       const dirName = pathParts[0];
-      parent.children = parent.children || [];
+      if (!parent.children) {
+        parent.children = [];
+      }
       
       let dir = parent.children.find(child => child.name === dirName && child.type === 'directory');
       if (!dir) {
@@ -166,14 +178,18 @@ export function FileManager({
                 key={child.path}
                 className={cn(
                   "flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-accent/50 transition-colors",
-                  selectedFile?.path === child.path && "bg-accent text-accent-foreground"
+                  selectedFile && selectedFile.path === child.path && "bg-accent text-accent-foreground"
                 )}
                 style={{ paddingLeft }}
-                onClick={() => file && onFileSelect?.(file)}
+                onClick={() => {
+                  if (file && onFileSelect) {
+                    onFileSelect(file);
+                  }
+                }}
               >
                 <FileCode size={14} />
                 <span className="text-sm truncate flex-1">{child.name}</span>
-                {child.metadata?.extension && (
+                {child.metadata && child.metadata.extension && (
                   <Badge variant="secondary" className="text-xs">
                     {child.metadata.extension}
                   </Badge>
@@ -198,14 +214,22 @@ export function FileManager({
     if (!files || files.length === 0) return;
 
     try {
+      if (!files[0] || !files[0].webkitRelativePath) {
+        throw new Error('Cannot determine project name from uploaded files');
+      }
+      const projectName = files[0].webkitRelativePath.split('/')[0];
+      if (!projectName) {
+        throw new Error('Project name is empty');
+      }
+
       const projectIndex = await fileIndexerService.indexProject(files, {
-        name: files[0].webkitRelativePath?.split('/')[0] || 'New Project',
+        name: projectName,
       });
       setProjectIndexes(prev => [...prev, projectIndex]);
       setSelectedProject(projectIndex);
       toast.success(`Проект "${projectIndex.name}" успешно загружен`);
     } catch (error) {
-      console.error('Error indexing project:', error);
+      console.error('Error indexing project:', JSON.stringify(error, null, 2));
       toast.error('Ошибка при загрузке проекта');
     }
   };
@@ -332,9 +356,13 @@ export function FileManager({
                       key={file.id}
                       className={cn(
                         "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent/50 transition-colors group",
-                        selectedFile?.id === file.id && "bg-accent text-accent-foreground"
+                        selectedFile && selectedFile.id === file.id && "bg-accent text-accent-foreground"
                       )}
-                      onClick={() => onFileSelect?.(file)}
+                      onClick={() => {
+                        if (onFileSelect) {
+                          onFileSelect(file);
+                        }
+                      }}
                     >
                       <FileIcon size={16} />
                       <div className="flex-1 min-w-0">
@@ -410,7 +438,7 @@ export function FileManager({
                     key={project.id}
                     className={cn(
                       "p-3 cursor-pointer hover:bg-accent/50 transition-colors",
-                      selectedProject?.id === project.id && "bg-accent"
+                      selectedProject && selectedProject.id === project.id && "bg-accent"
                     )}
                     onClick={() => setSelectedProject(project)}
                   >
@@ -419,19 +447,19 @@ export function FileManager({
                       <h4 className="font-medium truncate text-sm">{project.name}</h4>
                     </div>
                     <div className="flex flex-wrap gap-1 mb-2">
-                      {Object.keys(project.stats.languages).slice(0, 3).map(lang => (
+                      {Object.keys(project.stats && project.stats.languages ? project.stats.languages : {}).slice(0, 3).map(lang => (
                         <Badge key={lang} variant="secondary" className="text-xs h-5">
                           {lang}
                         </Badge>
                       ))}
-                      {Object.keys(project.stats.languages).length > 3 && (
+                      {Object.keys(project.stats && project.stats.languages ? project.stats.languages : {}).length > 3 && (
                         <Badge variant="secondary" className="text-xs h-5">
-                          +{Object.keys(project.stats.languages).length - 3}
+                          +{Object.keys(project.stats && project.stats.languages ? project.stats.languages : {}).length - 3}
                         </Badge>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {project.stats.totalFiles} файлов • {Math.round(project.stats.totalSize / 1024)} KB
+                      {project.stats && project.stats.totalFiles ? project.stats.totalFiles : 0} файлов • {Math.round(((project.stats && project.stats.totalSize) || 0) / 1024)} KB
                     </p>
                   </Card>
                 ))}

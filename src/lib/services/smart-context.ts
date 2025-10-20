@@ -1,12 +1,14 @@
 import { vectorService, VectorDocument, VectorSearchOptions } from './vector';
-import { Message, WorkMode } from '@/lib/types';
+import { Message } from '@/lib/types';
+import { serviceHealth } from './service-health';
+import { toast } from 'sonner';
 
 export interface ContextDocument {
   id: string;
   content: string;
   type: 'message' | 'file' | 'plan' | 'code' | 'error';
   timestamp: Date;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   relevanceScore?: number;
 }
 
@@ -37,197 +39,221 @@ class SmartContextService {
   };
 
   /**
+   * Упрощенный поиск при недоступности векторного сервиса
+   */
+  private async fallbackSearch(
+    query: string,
+    mode: string,
+    options: SmartContextOptions
+  ): Promise<ContextAnalysisResult> {
+    // Возвращаем пустой результат с предупреждением
+    console.warn('Используется упрощенный режим поиска (fallback)');
+    
+    return {
+      relevantDocuments: [],
+      suggestedQuestions: [],
+      keyTopics: [],
+      contextSummary: 'Векторный поиск недоступен. Используется упрощенный режим.',
+    };
+  }
+
+  /**
    * Ищет релевантный контекст для заданного запроса
+   * @returns Массив релевантных фрагментов с score для каждого
+   * @throws Error при ошибках I/O, таймаутах, неверной конфигурации
    */
   async findRelevantContext(
-    query: string, 
-    mode: WorkMode,
+    query: string,
+    mode: string,
     options: SmartContextOptions = {}
-  ): Promise<ContextAnalysisResult> {
+  ): Promise<Array<{ id: string; text: string; score: number }>> {
     const mergedOptions = { ...this.DEFAULT_OPTIONS, ...options };
-    
-    try {
-      // Поиск релевантных документов
-      const searchOptions: VectorSearchOptions = {
-        limit: mergedOptions.maxResults,
-        threshold: mergedOptions.minRelevanceScore,
-        filter: this.buildFilter(mergedOptions, mode),
-      };
 
-      let results: any[] = [];
-      try {
-        results = await vectorService.search(query, searchOptions);
-      } catch (vectorError) {
-        console.warn('Векторный поиск недоступен, используется fallback:', vectorError);
-        // Fallback: возвращаем пустой результат
-        results = [];
-      }
-      
-      // Преобразование результатов
-      const relevantDocuments = this.transformSearchResults(results, mergedOptions);
-      
-      // Анализ контекста
-      const keyTopics = this.extractKeyTopics(relevantDocuments);
-      const suggestedQuestions = await this.generateSuggestedQuestions(query, relevantDocuments, mode);
-      const contextSummary = this.generateContextSummary(relevantDocuments, keyTopics);
+    // Поиск релевантных документов
+    const searchOptions: VectorSearchOptions = {
+      limit: mergedOptions.maxResults,
+      threshold: mergedOptions.minRelevanceScore,
+      filter: this.buildFilter(mergedOptions, mode),
+    };
 
-      return {
-        relevantDocuments,
-        suggestedQuestions,
-        keyTopics,
-        contextSummary,
-      };
-    } catch (error) {
-      console.error('Error finding relevant context:', error);
-      return {
-        relevantDocuments: [],
-        suggestedQuestions: [],
-        keyTopics: [],
-        contextSummary: 'Контекст недоступен',
-      };
+    // Явная проверка доступности векторного поиска
+    const isVectorSearchAvailable = await serviceHealth.checkService(
+      'vector-search',
+      async () => vectorService.isAvailable()
+    );
+
+    if (!isVectorSearchAvailable) {
+      const error = new Error('Векторный поиск недоступен');
+      console.error('Vector search unavailable:', error);
+      toast.warning('Векторный поиск недоступен');
+      throw error;
     }
+
+    const vectorResults = await vectorService.search(query, searchOptions);
+
+    // Если нет совпадений - возвращаем пустой массив
+    if (!vectorResults || vectorResults.length === 0) {
+      return [];
+    }
+
+    // Преобразуем в упорядоченный список с score
+    return vectorResults.map(doc => ({
+      id: doc.id,
+      text: doc.content,
+      score: doc.similarity || 0
+    })).sort((a, b) => b.score - a.score); // Сортируем по убыванию score
   }
 
   /**
    * Добавляет сообщение в контекстную базу
+   * @throws Error при ошибках записи в векторную БД
    */
   async addMessageToContext(message: Message): Promise<void> {
-    try {
-      const document: VectorDocument = {
-        id: message.id,
-        content: message.content,
-        metadata: {
-          type: 'message',
-          messageType: message.type,
-          agentType: message.agentType,
-          isVoice: message.isVoice || false,
-          timestamp: message.timestamp.toISOString(),
-        },
-      };
+    const document: VectorDocument = {
+      id: message.id,
+      content: message.content,
+      metadata: {
+        type: 'message',
+        messageType: message.type,
+        agentType: message.agentType,
+        isVoice: message.isVoice || false,
+        timestamp: message.timestamp.toISOString(),
+      },
+    };
 
+    try {
       await vectorService.addDocument(document);
     } catch (error) {
       console.error('Error adding message to context:', error);
+      throw new Error(`Failed to add message to context: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /**
    * Добавляет файл проекта в контекстную базу
+   * @throws Error при ошибках записи
    */
   async addFileToContext(
-    filepath: string, 
-    content: string, 
-    metadata: Record<string, any> = {}
+    filepath: string,
+    content: string,
+    metadata: Record<string, unknown> = {}
   ): Promise<void> {
-    try {
-      const document: VectorDocument = {
-        id: `file_${filepath}`,
-        content: `Файл: ${filepath}\n\nСодержимое:\n${content}`,
-        metadata: {
-          type: 'file',
-          filepath,
-          fileType: this.getFileType(filepath),
-          size: content.length,
-          timestamp: new Date().toISOString(),
-          ...metadata,
-        },
-      };
+    const document: VectorDocument = {
+      id: `file_${filepath}`,
+      content: `Файл: ${filepath}\n\nСодержимое:\n${content}`,
+      metadata: {
+        type: 'file',
+        filepath,
+        fileType: this.getFileType(filepath),
+        size: content.length,
+        timestamp: new Date().toISOString(),
+        ...metadata,
+      },
+    };
 
+    try {
       await vectorService.addDocument(document);
     } catch (error) {
       console.error('Error adding file to context:', error);
+      throw new Error(`Failed to add file to context: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /**
    * Добавляет план в контекстную базу
+   * @throws Error при ошибках записи
    */
   async addPlanToContext(
-    planId: string, 
-    description: string, 
-    steps: string[], 
-    metadata: Record<string, any> = {}
+    planId: string,
+    description: string,
+    steps: string[],
+    metadata: Record<string, unknown> = {}
   ): Promise<void> {
-    try {
-      const content = `План: ${description}\n\nШаги:\n${steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}`;
-      
-      const document: VectorDocument = {
-        id: `plan_${planId}`,
-        content,
-        metadata: {
-          type: 'plan',
-          planId,
-          stepCount: steps.length,
-          timestamp: new Date().toISOString(),
-          ...metadata,
-        },
-      };
+    const content = `План: ${description}\n\nШаги:\n${steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}`;
 
+    const document: VectorDocument = {
+      id: `plan_${planId}`,
+      content,
+      metadata: {
+        type: 'plan',
+        planId,
+        stepCount: steps.length,
+        timestamp: new Date().toISOString(),
+        ...metadata,
+      },
+    };
+
+    try {
       await vectorService.addDocument(document);
     } catch (error) {
       console.error('Error adding plan to context:', error);
+      throw new Error(`Failed to add plan to context: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /**
    * Добавляет код в контекстную базу
+   * @throws Error при ошибках записи
    */
   async addCodeToContext(
     codeId: string,
     code: string,
     language: string,
     description?: string,
-    metadata: Record<string, any> = {}
+    metadata: Record<string, unknown> = {}
   ): Promise<void> {
-    try {
-      const content = `${description ? `Описание: ${description}\n\n` : ''}Код (${language}):\n\`\`\`${language}\n${code}\n\`\`\``;
-      
-      const document: VectorDocument = {
-        id: `code_${codeId}`,
-        content,
-        metadata: {
-          type: 'code',
-          language,
-          codeLength: code.length,
-          timestamp: new Date().toISOString(),
-          ...metadata,
-        },
-      };
+    const content = `${description ? `Описание: ${description}\n\n` : ''}Код (${language}):\n\`\`\`${language}\n${code}\n\`\`\``;
 
+    const document: VectorDocument = {
+      id: `code_${codeId}`,
+      content,
+      metadata: {
+        type: 'code',
+        language,
+        codeLength: code.length,
+        timestamp: new Date().toISOString(),
+        ...metadata,
+      },
+    };
+
+    try {
       await vectorService.addDocument(document);
     } catch (error) {
       console.error('Error adding code to context:', error);
+      throw new Error(`Failed to add code to context: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /**
    * Добавляет ошибку в контекстную базу
+   * @throws Error при ошибках записи
    */
   async addErrorToContext(
     errorId: string,
     errorMessage: string,
     stackTrace?: string,
     resolution?: string,
-    metadata: Record<string, any> = {}
+    metadata: Record<string, unknown> = {}
   ): Promise<void> {
-    try {
-      const content = `Ошибка: ${errorMessage}${stackTrace ? `\n\nСтек вызовов:\n${stackTrace}` : ''}${resolution ? `\n\nРешение:\n${resolution}` : ''}`;
-      
-      const document: VectorDocument = {
-        id: `error_${errorId}`,
-        content,
-        metadata: {
-          type: 'error',
-          severity: this.getErrorSeverity(errorMessage),
-          resolved: !!resolution,
-          timestamp: new Date().toISOString(),
-          ...metadata,
-        },
-      };
+    const content = `Ошибка: ${errorMessage}${stackTrace ? `\n\nСтек вызовов:\n${stackTrace}` : ''}${resolution ? `\n\nРешение:\n${resolution}` : ''}`;
 
+    const document: VectorDocument = {
+      id: `error_${errorId}`,
+      content,
+      metadata: {
+        type: 'error',
+        severity: this.getErrorSeverity(errorMessage),
+        resolved: !!resolution,
+        timestamp: new Date().toISOString(),
+        ...metadata,
+      },
+    };
+
+    try {
       await vectorService.addDocument(document);
     } catch (error) {
       console.error('Error adding error to context:', error);
+      throw new Error(`Failed to add error to context: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -243,8 +269,8 @@ class SmartContextService {
   /**
    * Создает фильтр для поиска
    */
-  private buildFilter(options: SmartContextOptions, mode: WorkMode): Record<string, any> {
-    const filter: any = {};
+  private buildFilter(options: SmartContextOptions, mode: string): Record<string, unknown> {
+    const filter: Record<string, unknown> = {};
     
     // Фильтр по типам документов
     const allowedTypes: string[] = [];
@@ -270,17 +296,25 @@ class SmartContextService {
    * Преобразует результаты поиска
    */
   private transformSearchResults(
-    results: VectorDocument[], 
+    results: Array<{ id: string; content: string; metadata: Record<string, unknown>; score: number }>,
     options: SmartContextOptions
   ): ContextDocument[] {
-    return results.map(result => ({
-      id: result.id,
-      content: result.content,
-      type: result.metadata?.type || 'message',
-      timestamp: new Date(result.metadata?.timestamp || Date.now()),
-      metadata: result.metadata,
-      relevanceScore: result.similarity,
-    }));
+    return results.map(result => {
+      const type = result.metadata ? result.metadata.type : undefined;
+      const validTypes = ['message', 'file', 'plan', 'code', 'error'] as const;
+      const documentType = typeof type === 'string' && (validTypes as readonly string[]).includes(type)
+        ? type as ContextDocument['type']
+        : 'message';
+      
+      return {
+        id: result.id,
+        content: result.content,
+        type: documentType,
+        timestamp: new Date((result.metadata ? result.metadata.timestamp : undefined) as string || Date.now()),
+        metadata: result.metadata,
+        relevanceScore: result.score,
+      };
+    });
   }
 
   /**
@@ -309,12 +343,12 @@ class SmartContextService {
   }
 
   /**
-   * Генерирует предлагаемые вопросы
+   * Генерировал предлагаемые вопросы
    */
   private async generateSuggestedQuestions(
     query: string, 
     documents: ContextDocument[], 
-    mode: WorkMode
+    mode: string
   ): Promise<string[]> {
     // В реальной реализации здесь бы использовался LLM для генерации вопросов
     const suggestions: string[] = [];
@@ -336,7 +370,7 @@ class SmartContextService {
     // Добавляем предложения на основе контекста
     const fileTypes = new Set(documents
       .filter(doc => doc.type === 'file')
-      .map(doc => doc.metadata?.fileType)
+      .map(doc => doc.metadata ? doc.metadata.fileType : undefined)
       .filter(Boolean));
 
     if (fileTypes.has('typescript') || fileTypes.has('javascript')) {
@@ -391,7 +425,8 @@ class SmartContextService {
    * Определяет тип файла по расширению
    */
   private getFileType(filepath: string): string {
-    const ext = filepath.split('.').pop()?.toLowerCase();
+    const ext = filepath.split('.').pop();
+    const extLower = ext ? ext.toLowerCase() : '';
     
     const typeMap: Record<string, string> = {
       'ts': 'typescript',
@@ -411,7 +446,7 @@ class SmartContextService {
       'c': 'c',
     };
 
-    return typeMap[ext || ''] || 'text';
+    return typeMap[extLower] || 'text';
   }
 
   /**

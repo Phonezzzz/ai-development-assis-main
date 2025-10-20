@@ -105,8 +105,14 @@ export function AgentSelector({ selectedAgent, onAgentSelect, className }: Agent
   const [newAgentPrompt, setNewAgentPrompt] = useState('');
   const [newAgentIcon, setNewAgentIcon] = useState('🤖');
 
-  const allAgents = [...DEFAULT_AGENTS, ...(customAgents || [])];
-  const currentAgent = allAgents.find(agent => agent.id === selectedAgent);
+  // customAgents гарантирован массив благодаря useKV defaultValue
+  const allAgents = [...DEFAULT_AGENTS, ...customAgents];
+
+  // Если selectedAgent не указан - используем первого агента по умолчанию
+  // Это явное поведение, а не скрытый fallback
+  const currentAgent = selectedAgent
+    ? allAgents.find(agent => agent.id === selectedAgent) || DEFAULT_AGENTS[0]
+    : DEFAULT_AGENTS[0];
 
   const handleAddAgent = () => {
     if (!newAgentName.trim() || !newAgentPrompt.trim()) {
@@ -123,7 +129,8 @@ export function AgentSelector({ selectedAgent, onAgentSelect, className }: Agent
       createdAt: new Date(),
     };
 
-    setCustomAgents(prev => [...(prev || []), newAgent]);
+    // prev гарантирован как массив благодаря useKV defaultValue
+    setCustomAgents(prev => [...prev, newAgent]);
     onAgentSelect(newAgent.id);
     
     // Reset form
@@ -137,7 +144,8 @@ export function AgentSelector({ selectedAgent, onAgentSelect, className }: Agent
   };
 
   const handleDeleteAgent = (agentId: string) => {
-    setCustomAgents(prev => (prev || []).filter(agent => agent.id !== agentId));
+    // prev гарантирован как массив благодаря useKV defaultValue
+    setCustomAgents(prev => prev.filter(agent => agent.id !== agentId));
     if (selectedAgent === agentId) {
       onAgentSelect(DEFAULT_AGENTS[0].id);
     }
@@ -155,7 +163,7 @@ export function AgentSelector({ selectedAgent, onAgentSelect, className }: Agent
               "h-6 w-6 p-0 bg-muted/50 hover:bg-muted transition-all duration-200 border border-transparent hover:border-accent hover:shadow-[0_0_8px_rgba(147,51,234,0.3)]",
               className
             )}
-            title={`Агент: ${currentAgent?.name || 'Не выбран'}`}
+            title={`Агент: ${currentAgent.name}`}
           >
             <Robot size={14} />
           </Button>

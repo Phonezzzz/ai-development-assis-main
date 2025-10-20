@@ -1,11 +1,11 @@
 "use client"
 
-import { ComponentProps } from "react"
+import { ComponentProps, memo } from "react"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 
 import { cn } from "@/lib/utils"
 
-function ScrollArea({
+function ScrollAreaComponent({
   className,
   children,
   ...props
@@ -28,7 +28,10 @@ function ScrollArea({
   )
 }
 
-function ScrollBar({
+// Мемоизируем компонент чтобы избежать лишних перерисовок
+const ScrollArea = memo(ScrollAreaComponent)
+
+function ScrollBarComponent({
   className,
   orientation = "vertical",
   ...props
@@ -54,5 +57,8 @@ function ScrollBar({
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   )
 }
+
+// Мемоизируем ScrollBar для оптимизации
+const ScrollBar = memo(ScrollBarComponent)
 
 export { ScrollArea, ScrollBar }

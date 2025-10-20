@@ -30,7 +30,7 @@ import {
   ArrowClockwise,
   X
 } from '@phosphor-icons/react';
-import { useVoiceRecognition } from '@/hooks/use-voice';
+import { useVoice } from '@/hooks/useVoice';
 import { toast } from 'sonner';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -58,8 +58,8 @@ export function ModernChatInput({ onSubmit, placeholder = "Спросите чт
   const [textareaHeight, setTextareaHeight] = useState('auto');
   const [maxHeightReached, setMaxHeightReached] = useState(false);
 
-  // Используем улучшенный хук с защитой от повторных кликов
-  const { voiceState, startListening, stopListening, isSupported, clearTranscript, isStarting } = useVoiceRecognition();
+  // Используем голосовой хук для распознавания речи
+  const { stt: { state: voiceState, startListening, stopListening, isSupported, clearTranscript, isStarting } } = useVoice();
   const [isListeningLocal, setIsListeningLocal] = useState(false);
 
   // Функция для расчета высоты textarea

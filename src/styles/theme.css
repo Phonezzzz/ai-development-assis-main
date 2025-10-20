@@ -1,66 +1,9 @@
 @import "tailwindcss";
 
-@import '@radix-ui/colors/sage-dark.css' layer(base);
-@import '@radix-ui/colors/olive.css' layer(base);
-@import '@radix-ui/colors/olive-dark.css' layer(base);
-@import '@radix-ui/colors/sand.css' layer(base);
-@import '@radix-ui/colors/sand-dark.css' layer(base);
-@import '@radix-ui/colors/red.css' layer(base);
-@import '@radix-ui/colors/red-dark.css' layer(base);
-@import '@radix-ui/colors/ruby.css' layer(base);
-@import '@radix-ui/colors/ruby-dark.css' layer(base);
-@import '@radix-ui/colors/crimson.css' layer(base);
-@import '@radix-ui/colors/crimson-dark.css' layer(base);
-@import '@radix-ui/colors/pink.css' layer(base);
-@import '@radix-ui/colors/pink-dark.css' layer(base);
-@import '@radix-ui/colors/plum.css' layer(base);
-@import '@radix-ui/colors/plum-dark.css' layer(base);
-@import '@radix-ui/colors/purple.css' layer(base);
-@import '@radix-ui/colors/purple-dark.css' layer(base);
-@import '@radix-ui/colors/violet.css' layer(base);
-@import '@radix-ui/colors/violet-dark.css' layer(base);
-@import '@radix-ui/colors/iris.css' layer(base);
-@import '@radix-ui/colors/iris-dark.css' layer(base);
-@import '@radix-ui/colors/indigo.css' layer(base);
-@import '@radix-ui/colors/indigo-dark.css' layer(base);
-@import '@radix-ui/colors/cyan.css' layer(base);
-@import '@radix-ui/colors/cyan-dark.css' layer(base);
-@import '@radix-ui/colors/teal.css' layer(base);
-@import '@radix-ui/colors/teal-dark.css' layer(base);
-@import '@radix-ui/colors/jade.css' layer(base);
-@import '@radix-ui/colors/jade-dark.css' layer(base);
-@import '@radix-ui/colors/green.css' layer(base);
-@import '@radix-ui/colors/green-dark.css' layer(base);
-@import '@radix-ui/colors/grass.css' layer(base);
-@import '@radix-ui/colors/grass-dark.css' layer(base);
-@import '@radix-ui/colors/bronze.css' layer(base);
-@import '@radix-ui/colors/bronze-dark.css' layer(base);
-@import '@radix-ui/colors/gold.css' layer(base);
-@import '@radix-ui/colors/gold-dark.css' layer(base);
-@import '@radix-ui/colors/brown.css' layer(base);
-@import '@radix-ui/colors/brown-dark.css' layer(base);
-@import '@radix-ui/colors/orange.css' layer(base);
-@import '@radix-ui/colors/orange-dark.css' layer(base);
-@import '@radix-ui/colors/amber.css' layer(base);
-@import '@radix-ui/colors/amber-dark.css' layer(base);
-@import '@radix-ui/colors/yellow.css' layer(base);
-@import '@radix-ui/colors/yellow-dark.css' layer(base);
-@import '@radix-ui/colors/lime.css' layer(base);
-@import '@radix-ui/colors/lime-dark.css' layer(base);
-@import '@radix-ui/colors/mint.css' layer(base);
-@import '@radix-ui/colors/mint-dark.css' layer(base);
-@import '@radix-ui/colors/sky.css' layer(base);
-@import '@radix-ui/colors/sky-dark.css' layer(base);
-@import '@radix-ui/colors/tomato.css' layer(base);
-@import '@radix-ui/colors/tomato-dark.css' layer(base);
-@import '@radix-ui/colors/gray.css' layer(base);
-@import '@radix-ui/colors/gray-dark.css' layer(base);
-@import '@radix-ui/colors/mauve.css' layer(base);
-@import '@radix-ui/colors/mauve-dark.css' layer(base);
 @import '@radix-ui/colors/slate.css' layer(base);
 @import '@radix-ui/colors/slate-dark.css' layer(base);
-@import '@radix-ui/colors/slate-alpha.css' layer(base);
-@import '@radix-ui/colors/slate-dark-alpha.css' layer(base);
+@import '@radix-ui/colors/violet.css' layer(base);
+@import '@radix-ui/colors/violet-dark.css' layer(base);
 
 @import 'tailwindcss/theme' layer(theme);
 
@@ -70,7 +13,7 @@
   The default border color has changed to `currentColor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
   looks the same as it did with Tailwind CSS v3.
-
+ 
   If we ever want to remove these styles, we need to add an explicit border
   color utility to any element that depends on these defaults.
 */
@@ -86,26 +29,27 @@
 
 @layer base {
   #spark-app {
-    --tomato-contrast: #fff;
-    --red-contrast: #fff;
-    --ruby-contrast: #fff;
-    --crimson-contrast: #fff;
-    --pink-contrast: #fff;
-    --plum-contrast: #fff;
-    --purple-contrast: #fff;
-    --violet-contrast: #fff;
-    --iris-contrast: #fff;
-    --indigo-contrast: #fff;
-    --blue-contrast: #fff;
-    --cyan-contrast: #fff;
-    --teal-contrast: #fff;
-    --jade-contrast: #fff;
-    --green-contrast: #fff;
-    --grass-contrast: #fff;
-    --bronze-contrast: #fff;
-    --gold-contrast: #fff;
-    --brown-contrast: #fff;
-    --orange-contrast: #fff;
+    /* Черно-оранжевая цветовая схема с высокой контрастностью */
+    --tomato-contrast: #000;
+    --red-contrast: #000;
+    --ruby-contrast: #000;
+    --crimson-contrast: #000;
+    --pink-contrast: #000;
+    --plum-contrast: #000;
+    --purple-contrast: #000;
+    --violet-contrast: #000;
+    --iris-contrast: #000;
+    --indigo-contrast: #000;
+    --blue-contrast: #000;
+    --cyan-contrast: #000;
+    --teal-contrast: #000;
+    --jade-contrast: #000;
+    --green-contrast: #000;
+    --grass-contrast: #000;
+    --bronze-contrast: #000;
+    --gold-contrast: #000;
+    --brown-contrast: #000;
+    --orange-contrast: #000;
     --amber-contrast: #000;
     --yellow-contrast: #000;
     --lime-contrast: #000;
@@ -116,18 +60,18 @@
     --slate-contrast: #fff;
     --sage-contrast: #fff;
     --olive-contrast: #fff;
-    --sand-contrast: #fff;
+    --sand-contrast: #000;
 
     /**
-   * Spacing scale
-   *
-   * These variables define a spacing scale based on Tailwind's default.
-   * We've introduced a --size-scale variable as a multiplier.
-   * By adjusting this single value, we can proportionally
-   * scale all spacing throughout the entire application.
-   *
-   * https://tailwindcss.com/docs/customizing-spacing#default-spacing-scale
-   */
+     * Spacing scale
+     *
+     * These variables define a spacing scale based on Tailwind's default.
+     * We've introduced a --size-scale variable as a multiplier.
+     * By adjusting this single value, we can proportionally
+     * scale all spacing throughout the entire application.
+     *
+     * https://tailwindcss.com/docs/customizing-spacing#default-spacing-scale
+     */
     --size-scale: 1;
     --size-0: 0px;
     --size-px: 1px;
@@ -174,74 +118,74 @@
     --radius-2xl: calc(16px * var(--radius-factor) * var(--size-scale));
     --radius-full: 9999px;
 
-    /* Neutral colors */
-    --color-neutral-1: var(--slate-1);
-    --color-neutral-2: var(--slate-2);
-    --color-neutral-3: var(--slate-3);
-    --color-neutral-4: var(--slate-4);
-    --color-neutral-5: var(--slate-5);
-    --color-neutral-6: var(--slate-6);
-    --color-neutral-7: var(--slate-7);
-    --color-neutral-8: var(--slate-8);
-    --color-neutral-9: var(--slate-9);
-    --color-neutral-10: var(--slate-10);
-    --color-neutral-11: var(--slate-11);
-    --color-neutral-12: var(--slate-12);
-    --color-neutral-a1: var(--slate-a1);
-    --color-neutral-a2: var(--slate-a2);
-    --color-neutral-a3: var(--slate-a3);
-    --color-neutral-a4: var(--slate-a4);
-    --color-neutral-a5: var(--slate-a5);
-    --color-neutral-a6: var(--slate-a6);
-    --color-neutral-a7: var(--slate-a7);
-    --color-neutral-a8: var(--slate-a8);
-    --color-neutral-a9: var(--slate-a9);
-    --color-neutral-a10: var(--slate-a10);
-    --color-neutral-a11: var(--slate-a11);
-    --color-neutral-a12: var(--slate-a12);
-    --color-neutral-contrast: var(--slate-contrast);
+    /* Черно-оранжевая палитра - темные нейтральные цвета */
+    --color-neutral-1: #0a0a0a;
+    --color-neutral-2: #1a1a1a;
+    --color-neutral-3: #2a2a2a;
+    --color-neutral-4: #3a3a3a;
+    --color-neutral-5: #4a4a4a;
+    --color-neutral-6: #5a5a5a;
+    --color-neutral-7: #6a6a6a;
+    --color-neutral-8: #7a7a7a;
+    --color-neutral-9: #c87332;
+    --color-neutral-10: #d98643;
+    --color-neutral-11: #f0a45f;
+    --color-neutral-12: #ffe1b3;
+    --color-neutral-a1: rgba(10, 10, 10, 0.1);
+    --color-neutral-a2: rgba(26, 26, 26, 0.2);
+    --color-neutral-a3: rgba(42, 42, 42, 0.3);
+    --color-neutral-a4: rgba(58, 58, 58, 0.4);
+    --color-neutral-a5: rgba(74, 74, 74, 0.5);
+    --color-neutral-a6: rgba(90, 90, 90, 0.6);
+    --color-neutral-a7: rgba(106, 106, 106, 0.7);
+    --color-neutral-a8: rgba(122, 122, 122, 0.8);
+    --color-neutral-a9: rgba(138, 138, 138, 0.9);
+    --color-neutral-a10: rgba(154, 154, 154, 1);
+    --color-neutral-a11: rgba(170, 170, 170, 1);
+    --color-neutral-a12: rgba(255, 255, 255, 1);
+    --color-neutral-contrast: #0a0a0a;
 
-    /* Accent colors - changed from blue to transparent/gray */
-    --color-accent-1: var(--slate-1);
-    --color-accent-2: var(--slate-2);
-    --color-accent-3: var(--slate-3);
-    --color-accent-4: var(--slate-4);
-    --color-accent-5: var(--slate-5);
-    --color-accent-6: var(--slate-6);
-    --color-accent-7: var(--slate-7);
-    --color-accent-8: var(--slate-8);
-    --color-accent-9: var(--slate-9);
-    --color-accent-10: var(--slate-10);
-    --color-accent-11: var(--slate-11);
-    --color-accent-12: var(--slate-12);
-    --color-accent-contrast: var(--slate-contrast);
+    /* Оранжевые акцентные цвета */
+    --color-accent-1: #1a0800;
+    --color-accent-2: #2d1100;
+    --color-accent-3: #401a00;
+    --color-accent-4: #532300;
+    --color-accent-5: #662c00;
+    --color-accent-6: #793500;
+    --color-accent-7: #8c3e00;
+    --color-accent-8: #9f4700;
+    --color-accent-9: #ff6600;
+    --color-accent-10: #ff7519;
+    --color-accent-11: #ff8533;
+    --color-accent-12: #ff994d;
+    --color-accent-contrast: #000000;
 
-    /* Secondary accent colors */
-    --color-accent-secondary-1: var(--violet-1);
-    --color-accent-secondary-2: var(--violet-2);
-    --color-accent-secondary-3: var(--violet-3);
-    --color-accent-secondary-4: var(--violet-4);
-    --color-accent-secondary-5: var(--violet-5);
-    --color-accent-secondary-6: var(--violet-6);
-    --color-accent-secondary-7: var(--violet-7);
-    --color-accent-secondary-8: var(--violet-8);
-    --color-accent-secondary-9: var(--violet-9);
-    --color-accent-secondary-10: var(--violet-10);
-    --color-accent-secondary-11: var(--violet-11);
-    --color-accent-secondary-12: var(--violet-12);
-    --color-accent-secondary-contrast: var(--violet-contrast);
+    /* Вторичные оранжевые акценты */
+    --color-accent-secondary-1: #0d0400;
+    --color-accent-secondary-2: #1a0800;
+    --color-accent-secondary-3: #260c00;
+    --color-accent-secondary-4: #331000;
+    --color-accent-secondary-5: #401400;
+    --color-accent-secondary-6: #4d1800;
+    --color-accent-secondary-7: #591c00;
+    --color-accent-secondary-8: #662000;
+    --color-accent-secondary-9: #ff4500;
+    --color-accent-secondary-10: #ff5722;
+    --color-accent-secondary-11: #ff6b35;
+    --color-accent-secondary-12: #ff7f4d;
+    --color-accent-secondary-contrast: #000000;
 
     /* Foreground colors */
-    --color-fg: var(--color-neutral-12);
-    --color-fg-secondary: var(--color-neutral-a11);
+    --color-fg: #ffe1b3;
+    --color-fg-secondary: #f6b877;
 
-    /* Background colors */
-    --color-bg: #ffffff;
-    --color-bg-inset: var(--color-neutral-2);
-    --color-bg-overlay: #ffffff;
+    /* Background colors - темные */
+    --color-bg: #000000;
+    --color-bg-inset: #1a1a1a;
+    --color-bg-overlay: #0a0a0a;
 
-    /* Focus ring */
-    --color-focus-ring: var(--color-accent-9);
+    /* Focus ring - оранжевый */
+    --color-focus-ring: #ff6600;
 
     /* Fonts */
     --font-sans-serif: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
@@ -253,8 +197,8 @@
   }
 
   #spark-app.dark-theme {
-    --color-bg: var(--color-neutral-1);
-    --color-bg-inset: #000000;
-    --color-bg-overlay: var(--color-neutral-3);
+    --color-bg: #000000;
+    --color-bg-inset: #1a1a1a;
+    --color-bg-overlay: #0a0a0a;
   }
 }

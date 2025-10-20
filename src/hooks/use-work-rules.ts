@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useKV } from '@/shims/spark-hooks';
 import { WorkRule, WorkRulesSet } from '@/lib/types';
 import { toast } from 'sonner';
@@ -13,6 +13,8 @@ const DEFAULT_WORK_RULES: WorkRule[] = [
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
+    scope: 'global',
+    modes: [],
   },
   {
     id: 'rule_no_console_log',
@@ -23,6 +25,8 @@ const DEFAULT_WORK_RULES: WorkRule[] = [
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
+    scope: 'global',
+    modes: [],
   },
   {
     id: 'rule_test_coverage',
@@ -33,6 +37,8 @@ const DEFAULT_WORK_RULES: WorkRule[] = [
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
+    scope: 'global',
+    modes: [],
   },
   {
     id: 'rule_commit_messages',
@@ -43,6 +49,8 @@ const DEFAULT_WORK_RULES: WorkRule[] = [
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
+    scope: 'global',
+    modes: [],
   },
   {
     id: 'rule_component_structure',
@@ -53,31 +61,54 @@ const DEFAULT_WORK_RULES: WorkRule[] = [
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
+    scope: 'global',
+    modes: [],
   },
 ];
 
 export function useWorkRules() {
   const [workRulesSets, setWorkRulesSets] = useKV<WorkRulesSet[]>('work-rules-sets', []);
-  const [currentRulesSet, setCurrentRulesSet] = useKV<WorkRulesSet | null>('current-work-rules', null);
+  const [currentRulesSet, setCurrentRulesSet] = useState<WorkRulesSet | null>(null);
+
+  // Initialize default rules on first load if none exist
+  useEffect(() => {
+    if (workRulesSets.length === 0) {
+      initializeDefaultRules();
+    }
+  }, [workRulesSets.length]); // Зависимость только от длины массива
 
   // Initialize default rules if none exist
-  const initializeDefaultRules = useCallback(async () => {
-    if (!currentRulesSet && (!workRulesSets || workRulesSets.length === 0)) {
-      const defaultSet: WorkRulesSet = {
-        id: 'default_rules',
-        name: 'Правила по умолчанию',
-        description: 'Базовые правила разработки',
-        rules: DEFAULT_WORK_RULES,
-        isDefault: true,
+  const initializeDefaultRules = useCallback(() => {
+    const defaultRules: WorkRule[] = [
+      {
+        id: '1',
+        title: 'ТОЧНОЕ ПОНИМАНИЕ ТРЕБОВАНИЙ',
+        description: '',
+        category: 'coding',
+        priority: 'high',
+        isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
-      };
+        scope: 'global',
+        modes: [],
+      },
+      ...DEFAULT_WORK_RULES,
+    ];
 
-      setWorkRulesSets([defaultSet]);
-      setCurrentRulesSet(defaultSet);
-      toast.success('Инициализированы правила работы по умолчанию');
-    }
-  }, [currentRulesSet, workRulesSets, setWorkRulesSets, setCurrentRulesSet]);
+    const defaultSet: WorkRulesSet = {
+      id: 'default_rules',
+      name: 'Правила по умолчанию',
+      description: 'Базовые правила разработки',
+      rules: defaultRules,
+      isDefault: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    setWorkRulesSets([defaultSet]);
+    setCurrentRulesSet(defaultSet);
+    toast.success('Инициализированы правила работы по умолчанию');
+  }, [setWorkRulesSets]);
 
   const createWorkRulesSet = useCallback(async (name: string, description?: string) => {
     const newSet: WorkRulesSet = {
@@ -99,7 +130,9 @@ export function useWorkRules() {
     title: string,
     description: string,
     category: WorkRule['category'] = 'general',
-    priority: WorkRule['priority'] = 'medium'
+    priority: WorkRule['priority'] = 'medium',
+    scope: WorkRule['scope'] = 'global',
+    modes: WorkRule['modes'] = []
   ) => {
     if (!currentRulesSet) {
       toast.error('Нет активного набора правил');
@@ -115,6 +148,8 @@ export function useWorkRules() {
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
+      scope,
+      modes,
     };
 
     const updatedSet = {

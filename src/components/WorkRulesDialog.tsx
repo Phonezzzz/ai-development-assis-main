@@ -106,9 +106,9 @@ export function WorkRulesDialog() {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <Button
-          variant="outline"
+          variant="default"
           size="sm"
-          className="gap-2"
+          className="gap-2 bg-orange-600 text-black hover:bg-orange-500 shadow-[0_0_15px_rgba(255,102,0,0.45)]"
           title={`Work Rules (${rulesCount} активных)`}
           onClick={() => {
             if (!currentRulesSet) {
@@ -125,7 +125,7 @@ export function WorkRulesDialog() {
           )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[80vh]">
+      <DialogContent className="max-w-4xl max-h-[80vh] bg-neutral-1 border border-orange-500/30 text-neutral-12 shadow-[0_0_35px_rgba(255,102,0,0.25)] backdrop-blur">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings size={20} />
@@ -144,7 +144,7 @@ export function WorkRulesDialog() {
         <div className="flex flex-col gap-4">
           {/* Stats */}
           {currentRulesSet && (
-            <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+            <div className="flex items-center gap-4 p-3 rounded-lg border border-orange-500/25 bg-neutral-2/90 shadow-[0_0_18px_rgba(255,102,0,0.18)]">
               <div className="flex items-center gap-2">
                 <CheckCircle size={16} className="text-green-500" />
                 <span className="text-sm">
@@ -168,7 +168,7 @@ export function WorkRulesDialog() {
                 </div>
               ) : (
                 activeRules.map(rule => (
-                  <Card key={rule.id} className="p-4">
+                  <Card key={rule.id} className="p-4 bg-neutral-2/90 border border-orange-500/25 shadow-[0_0_20px_rgba(255,102,0,0.22)]">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
@@ -202,7 +202,7 @@ export function WorkRulesDialog() {
 
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-orange-200 hover:bg-orange-500/15">
                             <DotsThreeVertical size={14} />
                           </Button>
                         </DropdownMenuTrigger>
@@ -225,7 +225,7 @@ export function WorkRulesDialog() {
 
           {/* Add Rule Form */}
           {showAddForm ? (
-            <Card className="p-4">
+            <Card className="p-4 bg-neutral-2/95 border border-orange-500/25 shadow-[0_0_20px_rgba(255,102,0,0.24)]">
               <h4 className="font-medium mb-3">Добавить новое правило</h4>
               <div className="space-y-3">
                 <Input
@@ -242,7 +242,7 @@ export function WorkRulesDialog() {
                 <div className="flex gap-3">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="gap-2">
+                      <Button variant="outline" className="gap-2 border border-orange-500/40 bg-neutral-2 hover:bg-orange-500/10 text-orange-200">
                         {getCategoryIcon(newRuleCategory)}
                         {newRuleCategory}
                       </Button>
@@ -273,7 +273,7 @@ export function WorkRulesDialog() {
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="gap-2">
+                      <Button variant="outline" className="gap-2 border border-orange-500/40 bg-neutral-2 hover:bg-orange-500/10 text-orange-200">
                         <Flag size={14} className={getPriorityColor(newRulePriority)} />
                         {newRulePriority === 'high' ? 'Высокий' :
                          newRulePriority === 'medium' ? 'Средний' : 'Низкий'}
@@ -296,12 +296,13 @@ export function WorkRulesDialog() {
                   </DropdownMenu>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleAddRule} className="flex-1">
+                  <Button onClick={handleAddRule} className="flex-1 bg-orange-600 text-black hover:bg-orange-500 shadow-[0_0_15px_rgba(255,102,0,0.4)]">
                     Добавить правило
                   </Button>
                   <Button
                     onClick={() => setShowAddForm(false)}
                     variant="outline"
+                    className="border border-orange-500/40 bg-neutral-2 text-orange-200 hover:bg-orange-500/10"
                   >
                     Отмена
                   </Button>
@@ -311,8 +312,8 @@ export function WorkRulesDialog() {
           ) : (
             <Button
               onClick={() => setShowAddForm(true)}
-              variant="outline"
-              className="gap-2"
+              variant="default"
+              className="gap-2 bg-orange-600 text-black hover:bg-orange-500 shadow-[0_0_15px_rgba(255,102,0,0.4)]"
             >
               <Plus size={16} />
               Добавить правило

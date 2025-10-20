@@ -39,7 +39,7 @@ export function useTodo() {
         },
       });
     } catch (error) {
-      console.error('Error storing todo list in vector DB:', error);
+      console.error('Error storing todo list in vector DB:', JSON.stringify(error, null, 2));
     }
 
     toast.success(`Создан TODO список: ${name}`);
@@ -111,7 +111,7 @@ export function useTodo() {
         },
       });
     } catch (error) {
-      console.error('Error storing todo item in vector DB:', error);
+      console.error('Error storing todo item in vector DB:', JSON.stringify(error, null, 2));
     }
 
     toast.success(`Добавлена задача: ${title}`);
@@ -177,7 +177,7 @@ export function useTodo() {
         },
       });
     } catch (error) {
-      console.error('Error updating todo item in vector DB:', error);
+      console.error('Error updating todo item in vector DB:', JSON.stringify(error, null, 2));
     }
 
     const statusMessages = {

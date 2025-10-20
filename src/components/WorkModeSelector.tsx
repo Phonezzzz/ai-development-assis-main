@@ -1,12 +1,13 @@
+import React from 'react';
 import { Button } from '@/components/ui/button';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { 
+import {
   Brain,
   Lightning,
   ChatCircle
@@ -43,6 +44,14 @@ interface WorkModeSelectorProps {
 export function WorkModeSelector({ selectedMode, onModeSelect, className }: WorkModeSelectorProps) {
   const currentMode = WORK_MODES.find(mode => mode.id === selectedMode);
 
+  const getModeName = (): string => {
+    return currentMode?.name || 'Не выбран';
+  };
+
+  const getModeIcon = () => {
+    return currentMode?.icon || Brain;
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -53,9 +62,9 @@ export function WorkModeSelector({ selectedMode, onModeSelect, className }: Work
             "h-6 w-6 p-0 bg-muted/50 hover:bg-muted",
             className
           )}
-          title={`Режим: ${currentMode?.name || 'Не выбран'}`}
+          title={`Режим: ${getModeName()}`}
         >
-          {currentMode?.icon ? <currentMode.icon size={14} /> : <Brain size={14} />}
+          {React.createElement(getModeIcon(), { size: 14 })}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">

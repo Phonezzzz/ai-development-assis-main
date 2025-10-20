@@ -23,7 +23,7 @@ export function formatDate(date: Date | string | null | undefined, options?: Int
       minute: '2-digit',
     }).format(dateObj);
   } catch (error) {
-    console.error('Error formatting date:', error);
+    console.error('Error formatting date:', JSON.stringify(error, null, 2));
     return 'Invalid date';
   }
 }

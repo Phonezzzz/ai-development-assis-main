@@ -30,7 +30,7 @@ export function ContextUsageBar({
   const [savePoints, setSavePoints] = useKV<SavePoint[]>('context-save-points', []);
   const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
 
-  const maxContext = currentModel?.contextLength || 4096; // Default to 4k if no model
+  const maxContext = currentModel && currentModel.contextLength ? currentModel.contextLength : 4096; // Default to 4k if no model
   const usagePercentage = (currentContextUsage / maxContext) * 100;
 
 
@@ -66,7 +66,7 @@ export function ContextUsageBar({
       timestamp: new Date(),
       contextUsed: currentContextUsage,
       messagesCount: 0, // TODO: get actual message count
-      description: `Save Point ${(savePoints?.length || 0) + 1}`
+      description: `Save Point ${(savePoints && savePoints.length ? savePoints.length : 0) + 1}`
     };
 
     setSavePoints(prev => [...(prev || []), newSavePoint]);
@@ -84,7 +84,7 @@ export function ContextUsageBar({
     return `${(tokens / 1000000).toFixed(1)}M`;
   };
 
-  const getSegmentColor = (segment: any) => {
+  const getSegmentColor = (segment: { id: string; startContext: number; endContext: number; usage: number; percentage: number; timestamp: Date; description: string; isCurrent: boolean }) => {
     if (segment.isCurrent) {
       if (segment.percentage > 80) return 'bg-red-500';
       if (segment.percentage > 60) return 'bg-yellow-500';
@@ -166,7 +166,10 @@ export function ContextUsageBar({
         {/* Hovered segment info */}
         {hoveredSegment && (
           <div className="text-xs text-center text-muted-foreground">
-            {segments.find(s => s.id === hoveredSegment)?.description}
+            {(() => {
+              const segment = segments.find(s => s.id === hoveredSegment);
+              return segment ? segment.description : '';
+            })()}
             {hoveredSegment !== 'current' && (
               <div className="flex items-center justify-center gap-1 mt-1">
                 <ArrowCounterClockwise size={10} />

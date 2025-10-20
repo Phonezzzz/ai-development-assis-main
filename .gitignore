@@ -9,6 +9,8 @@ lerna-debug.log*
 
 node_modules
 dist
+server/node_modules
+server/dist
 dist-ssr
 *-dist
 *.local
@@ -24,11 +26,18 @@ dist-ssr
 *.sln
 *.sw?
 
-.env
-**/agent-eval-report*
-packages
-pids
-.file-manifest
-.devcontainer/
+# Makefile and scripts temporary files
+.backend.pid
+.frontend.pid
+logs/
+*.log
 
-.spark-workbench-id
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+server/.env
+server/.env.local
