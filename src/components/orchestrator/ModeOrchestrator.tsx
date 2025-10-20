@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ModeSelector } from '@/components/ModeSelector';
 import { useVoice } from '@/hooks/useVoice';
-import { Message, PendingPlan, TodoHook } from '@/lib/types';
+import { Message, PendingPlan, TodoHook, SavePoint } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useWorkRules } from '@/hooks/use-work-rules';
@@ -16,7 +16,7 @@ import { useModeOrchestratorState } from '@/hooks/use-mode-orchestrator-state';
 import { ModeSidebar } from './ModeSidebar';
 import { ModeContent } from './ModeContent';
 import { llmService } from '@/lib/services/llm';
-import { buildPlanFromInput } from '@/lib/services/PlanManager';
+import { buildPlanFromInput, executePlan, type PlanDeps } from '@/lib/services/PlanManager';
 
 export function ModeOrchestrator() {
   const currentMode = useModeOrchestratorStore(state => state.ui.currentMode);
@@ -47,6 +47,7 @@ export function ModeOrchestrator() {
     updateSavePoints: storeUpdateSavePoints,
     setPendingPlan: storeSetPendingPlan,
     clearSavePoints: storeClearSavePoints,
+    setCurrentStepIndex: storeSetCurrentStepIndex,
   } = actions;
   const [isProcessing, setIsProcessing] = useState(false);
   const {
@@ -231,6 +232,9 @@ ${workRulesContext}${todoListContext}
     }
   }, []);
 
+  // Создаём AbortController для отмены выполнения плана
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const handleActMode = useCallback(async (
     text: string,
     modelId: string,
@@ -238,83 +242,121 @@ ${workRulesContext}${todoListContext}
     todoListContext: string,
     todo: TodoHook
   ): Promise<string> => {
-    const currentItem = todo.getCurrentItem();
-    const nextItem = todo.getNextItem();
-
-    let contextPrompt = '';
-    let taskToExecute = text;
-
-    if (text.toLowerCase().includes('следующая задача') || text.toLowerCase().includes('next') || text.toLowerCase().includes('продолжить')) {
-      if (currentItem) {
-        await todo.updateTodoItem(currentItem.id, { status: 'completed', result: 'Задача завершена по запросу пользователя' });
+    try {
+      // Проверяем наличие плана
+      if (!pendingPlan) {
+        return '❌ Нет активного плана. Сначала создайте план в режиме PLAN.';
       }
-      if (nextItem) {
-        await todo.setCurrentTodoInProgress(nextItem.id);
-        taskToExecute = nextItem.title;
-        contextPrompt = `Выполни следующую задачу из TODO списка: "${nextItem.title}"
-Описание: ${nextItem.description || 'Нет описания'}
-Инструкции: ${nextItem.instructions || 'Нет инструкций'}
-Ожидаемый результат: ${nextItem.expectedResult || 'Не указан'}`;
-      } else {
-        return '🎉 **Все задачи выполнены!** TODO список заверчен.';
+
+      // Определяем начальный индекс для возобновления
+      const currentStepIndex = useModeOrchestratorStore.getState().chat.currentStepIndex ?? 0;
+      const startIndex = Math.max(0, currentStepIndex);
+
+      console.log(`[ActMode] Starting/resuming plan execution from step ${startIndex + 1}/${pendingPlan.todos.length}`);
+
+      // Создаём AbortController для возможности отмены
+      abortControllerRef.current = new AbortController();
+
+      // Собираем deps для executePlan
+      const deps: PlanDeps = {
+        llm: {
+          askQuestion: (prompt: string, model: string) => llmService.askQuestion(prompt, model)
+        },
+        modelId,
+        savePoints: {
+          create: async (sp) => {
+            const savePoint: SavePoint = {
+              id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+              timestamp: new Date(),
+              ...sp
+            };
+            storeUpdateSavePoints(prev => [...prev, savePoint]);
+          }
+        },
+        todo: {
+          updateFromStep: async (input) => {
+            const currentList = todo.currentList;
+            if (currentList && input.result) {
+              // Находим текущий item в списке и обновляем его
+              const todoItem = currentList.items.find(
+                item => item.title === input.stepTitle
+              );
+              if (todoItem) {
+                await todo.updateTodoItem(todoItem.id, {
+                  status: 'completed',
+                  result: input.result,
+                  actualTime: 30
+                });
+              }
+            }
+          }
+        },
+        store: {
+          setPlanStatus: (status) => {
+            // Статус плана обновляется в store при необходимости
+            console.log(`[PlanManager] Plan status: ${status}`);
+          },
+          setCurrentStepIndex: (index) => {
+            storeSetCurrentStepIndex(index);
+            console.log(`[PlanManager] Current step index: ${index}`);
+          }
+        },
+        logger: {
+          info: (msg: string) => console.log(`[PlanManager] ${msg}`),
+          error: (msg: string) => console.error(`[PlanManager] ${msg}`)
+        },
+        signal: abortControllerRef.current.signal,
+        workRulesText: workRulesContext,
+        contextBuilder: async () => {
+          try {
+            // Собираем краткий контекст: текущий TODO, правила, прогресс
+            const currentItem = todo.getCurrentItem();
+            const completedCount = todo.getCompletedCount();
+            const totalCount = todo.getTotalCount();
+
+            let context = '';
+            if (currentItem) {
+              context += `Текущая задача: ${currentItem.title}\n`;
+            }
+            if (completedCount >= 0 && totalCount > 0) {
+              context += `Прогресс: ${completedCount}/${totalCount} завершено\n`;
+            }
+            if (todoListContext) {
+              context += todoListContext;
+            }
+            return context || '';
+          } catch (err) {
+            console.error('[contextBuilder] Error:', err);
+            return '';
+          }
+        },
+        onStepStart: (stepIndex) => {
+          console.log(`[ActMode] Started step ${stepIndex + 1}`);
+        },
+        onStepDone: (stepIndex) => {
+          console.log(`[ActMode] Completed step ${stepIndex + 1}`);
+        },
+        onError: (stepIndex, error) => {
+          console.error(`[ActMode] Error at step ${stepIndex + 1}:`, error);
+        }
+      };
+
+      // Выполняем план
+      await executePlan(pendingPlan, deps, startIndex);
+
+      return `✅ **План успешно выполнен!**\n\nВсе ${pendingPlan.todos.length} шагов завершены.\n\nРезультаты сохранены в TODO списке и savepoints.`;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Если это отмена - это не критичная ошибка
+      if (errorMsg.includes('aborted')) {
+        return `⏸️ **Выполнение плана прервано.**\n\nВы можете продолжить с текущего шага, введя текст для возобновления.`;
       }
-    } else if (currentItem) {
-      contextPrompt = `Продолжай работу над текущей задачей: "${currentItem.title}"
-Описание: ${currentItem.description || 'Нет описания'}
-Инструкции: ${currentItem.instructions || 'Нет инструкций'}
-Ожидаемый результат: ${currentItem.expectedResult || 'Не указан'}
 
-Пользователь говорит: "${text}"`;
-    } else if (nextItem) {
-      await todo.setCurrentTodoInProgress(nextItem.id);
-      contextPrompt = `Начинаю работу над задачей: "${nextItem.title}"
-Описание: ${nextItem.description || 'Нет описания'}
-Инструкции: ${nextItem.instructions || 'Нет инструкций'}
-Ожидаемый результат: ${nextItem.expectedResult || 'Не указан'}
-
-Дополнительно: ${text}`;
-    } else {
-      contextPrompt = `Выполни задачу: "${text}"
-
-Примечание: В TODO списке нет активных задач. Работаю в свободном режиме.`;
+      console.error('Error in act mode:', error);
+      return `❌ **Ошибка при выполнении плана:** ${errorMsg}\n\nПожалуйста, проверьте логи и попробуйте снова.`;
     }
-
-    const prompt = `Ты разработчик в режиме ACT. ${contextPrompt}${workRulesContext}${todoListContext}
-
-Используй доступные инструменты для:
-- Чтения и редактирования файлов
-- Выполнения команд
-- Создания новых компонентов
-- Тестирования изменений
-
-ОБЯЗАТЕЛЬНО СОБЛЮДАЙ ВСЕ ПРАВИЛА РАБОТЫ ВЫШЕ!
-
-После выполнения:
-1. Опиши что сделай
-2. Покажи результат
-3. Укажи если задача завершена
-
-Если задача выполнена, скажи "ЗАДАЧА ЗАВЕРШЕНА" в конце ответа.`;
-
-    let responseText = await llmService.askQuestion(prompt, modelId);
-
-    if (responseText.includes('ЗАДАЧА ЗАВЕРШЕНА') && currentItem) {
-      await todo.updateTodoItem(currentItem.id, {
-        status: 'completed',
-        result: 'Задача выполнена автоматически',
-        actualTime: 30
-      });
-
-      const nextTask = todo.getNextItem();
-      if (nextTask) {
-        responseText += `\n\n📋 **Следующая задача:** ${nextTask.title}\nНапишите "следующая задача" для продолжения.`;
-      } else {
-        responseText += '\n\n🎉 **Все задачи из TODO списка выполнены!**';
-      }
-    }
-
-    return responseText;
-  }, []);
+  }, [pendingPlan, storeUpdateSavePoints, storeSetCurrentStepIndex, workRulesContext, todoListContext, todo]);
 
   const { handleSendMessage } = useMessageHandling({
     currentModelId: currentModel ? currentModel.id : undefined,
