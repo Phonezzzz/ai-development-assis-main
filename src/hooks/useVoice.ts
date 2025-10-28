@@ -244,6 +244,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
           const text = await sttService.transcribeAudio(blob, {
             languageCode: 'ru',
+            modelId: 'scribe_v1',
             signal: ctrl.signal,
             timeoutMs: 60000
           });
