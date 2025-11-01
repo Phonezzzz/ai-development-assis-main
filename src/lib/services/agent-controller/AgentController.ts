@@ -13,6 +13,7 @@ import type {
   EnqueueTaskOptions,
   UpdateTaskOptions,
 } from './types';
+import { EventHandlingStrategy } from './EventHandlingStrategy';
 
 interface InitializeOptions {
   id: string;
@@ -33,7 +34,7 @@ export class AgentController {
   private readonly taskQueue = new TaskQueue();
   private readonly memoryManager = new MemoryManager();
   private readonly actionCoordinator = new ActionCoordinator();
-  private readonly listeners = new Set<AgentControllerListener>();
+  private readonly events = new EventHandlingStrategy();
   private memoryStats = null as AgentControllerSnapshot['memoryStats'];
   private lastSnapshot: AgentControllerSnapshot | null = null;
 
@@ -82,11 +83,7 @@ export class AgentController {
   }
 
   subscribe(listener: AgentControllerListener): () => void {
-    this.listeners.add(listener);
-    listener('snapshot', this.getSnapshot());
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return this.events.subscribe(listener, this.getSnapshot());
   }
 
   submitPlan(plan: PendingPlan): AgentControllerSnapshot {
@@ -164,7 +161,7 @@ export class AgentController {
     return this.emit('tasks_updated');
   }
 
-  updateTask(taskId: string, updates: Partial<AgentTask>, options: UpdateTaskOptions = {}): AgentControllerSnapshot {
+  async updateTask(taskId: string, updates: Partial<AgentTask>, options: UpdateTaskOptions = {}): Promise<AgentControllerSnapshot> {
     this.ensureSession();
     const previousTask = this.taskQueue.getAll().find((task) => task.id === taskId);
     const updated = this.taskQueue.updateTask(taskId, updates, options);
@@ -203,16 +200,9 @@ export class AgentController {
 
     if (updated.status === 'completed') {
       this.actionCoordinator.clearActiveForTask(updated.id);
-      void this.memoryManager.recordTaskCompletion(updated).catch((error) => {
-        agentEventSystem.emit(AGENT_EVENTS.ERROR, {
-          message: 'Ошибка записи результатов задачи в память',
-          source: 'agent-controller',
-          error,
-          scope: 'memory-record',
-          timestamp: new Date().toISOString(),
-        });
-      });
-      void this.refreshMemoryStats();
+      // Fail-fast: не подавляем ошибку записи памяти
+      await this.memoryManager.recordTaskCompletion(updated);
+      await this.refreshMemoryStats();
     }
 
     if (!this.taskQueue.hasTasks()) {
@@ -340,20 +330,7 @@ export class AgentController {
   private emit(event: AgentControllerEvent): AgentControllerSnapshot {
     const snapshot = this.buildSnapshot();
     this.lastSnapshot = snapshot;
-    for (const listener of this.listeners) {
-      try {
-        listener(event, snapshot);
-      } catch (error) {
-        agentEventSystem.emit(AGENT_EVENTS.WARNING, {
-          message: 'Ошибка обработчика подписчика AgentController',
-          source: 'agent-controller',
-          error,
-          scope: 'listener',
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }
-    return snapshot;
+    return this.events.emit(event, snapshot);
   }
 }
 
